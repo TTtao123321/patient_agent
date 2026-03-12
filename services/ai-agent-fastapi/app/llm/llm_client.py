@@ -1,5 +1,7 @@
 """LLM Client for intent recognition and other LLM-based tasks."""
 
+from collections.abc import Iterator
+
 from langchain_ollama import OllamaLLM
 from app.core.settings import settings
 
@@ -39,6 +41,33 @@ class LLMClient:
             LLM response
         """
         return self._llm.invoke(prompt)
+
+    def stream(self, prompt: str) -> Iterator[str]:
+        """
+        Stream LLM response chunks for the given prompt.
+
+        Args:
+            prompt: Input prompt for LLM
+
+        Returns:
+            Iterator of incremental text chunks
+        """
+        for chunk in self._llm.stream(prompt):
+            if chunk is None:
+                continue
+            if isinstance(chunk, str):
+                if chunk:
+                    yield chunk
+                continue
+
+            content = getattr(chunk, "content", None)
+            if isinstance(content, str) and content:
+                yield content
+                continue
+
+            text = str(chunk)
+            if text:
+                yield text
 
 
 def get_llm_client() -> LLMClient:

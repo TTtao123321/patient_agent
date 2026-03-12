@@ -6,6 +6,7 @@ import com.patientagent.modules.chat.dto.SendMessageRequest;
 import com.patientagent.modules.chat.dto.SendMessageResponse;
 import com.patientagent.modules.chat.service.ChatService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.UUID;
 
@@ -30,6 +32,11 @@ public class ChatController {
     public ApiResponse<SendMessageResponse> sendMessage(@Valid @RequestBody SendMessageRequest request) {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         return ApiResponse.success(traceId, chatService.sendMessage(request));
+    }
+
+    @PostMapping(path = "/messages/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamMessage(@Valid @RequestBody SendMessageRequest request) {
+        return chatService.streamMessage(request);
     }
 
     @GetMapping("/sessions/{sessionNo}/messages")

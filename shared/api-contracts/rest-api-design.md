@@ -203,46 +203,58 @@
 | scene_type | string | 会话场景 |
 | started_at | string | 创建时间 |
 
-### 4.2 发送消息
-- 接口路径：`POST /api/v1/chat/sessions/{session_id}/messages`
+### 4.2 发送消息（异步）
+- 接口路径：`POST /api/v1/chat/messages/send`
 - 请求方式：`POST`
 - 请求参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| session_id | long | 是 | 路径参数 |
+| sessionNo | string | 否 | 会话编号，缺省时自动创建 |
+| userId | long | 是 | 用户 ID |
+| sceneType | string | 否 | `symptom`/`report`/`knowledge`/`mixed` |
+| title | string | 否 | 会话标题 |
 | content | string | 是 | 用户输入内容 |
-| message_type | string | 否 | 默认 `TEXT` |
-| attachments | array | 否 | 附件列表 |
-| context | object | 否 | 额外上下文，如报告ID |
+| messageType | string | 否 | 默认 `TEXT` |
 
 - 返回结构（data）：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| message_id | long | 用户消息ID |
-| agent_message_id | long | Agent 回答消息ID |
-| answer | string | 回复内容 |
-| intent | string | 路由意图 |
-| agent_used | string | 实际处理 Agent |
-| risk_level | string | 风险等级 |
-| citations | array | 引用来源 |
-| next_steps | array | 下一步建议 |
+| sessionNo | string | 会话编号 |
+| userMessageId | long | 用户消息 ID |
+| agentMessageId | long | 异步模式下为空 |
+| answer | string | 固定返回排队提示 |
+| taskStatus | string | `QUEUED` |
 
-### 4.3 会话消息列表
-- 接口路径：`GET /api/v1/chat/sessions/{session_id}/messages`
+说明：该接口会先记录用户消息，再向 RabbitMQ 发送 AI 任务，前端需通过历史接口轮询 AI 回复。
+
+### 4.3 发送消息（流式 SSE）
+- 接口路径：`POST /api/v1/chat/messages/stream`
+- 请求方式：`POST`
+- 响应类型：`text/event-stream`
+- 请求参数与异步发送接口一致。
+
+SSE 事件：
+
+| 事件名 | 说明 |
+| --- | --- |
+| start | 返回会话 ID、意图、命中的 Agent、上下文条数 |
+| chunk | 返回当前文本分片 |
+| done | 返回最终完整回答 |
+
+### 4.4 会话消息列表
+- 接口路径：`GET /api/v1/chat/sessions/{sessionNo}/messages`
 - 请求方式：`GET`
 - 请求参数（Query）：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| session_id | long | 是 | 路径参数 |
 | page | int | 否 | 默认 1 |
-| page_size | int | 否 | 默认 50 |
+| pageSize | int | 否 | 默认 50 |
 
-- 返回结构：分页结构，`items` 每项包含 `message_id`、`sender_type`、`content`、`agent_type`、`citations`、`sent_at`。
-
-### 4.4 会话列表
+- 返回结构：分页结构，`items` 每项包含 `messageId`、`senderType`、`content`、`agentType`、`sentAt`。
+### 4.5 会话列表
 - 接口路径：`GET /api/v1/chat/sessions`
 - 请求方式：`GET`
 - 请求参数（Query）：
@@ -282,7 +294,21 @@
 | agent_used | string | 命中的 Agent |
 | used_context_messages | int | 本次使用的上下文消息条数 |
 
-### 5.2 会话历史查询
+### 5.2 流式聊天入口（Router + Memory + StreamingResponse）
+- 接口路径：`POST /agent/chat/stream`
+- 请求方式：`POST`
+- 响应类型：`text/event-stream`
+- 请求参数与 `POST /agent/chat` 一致。
+
+SSE 事件：
+
+| 事件名 | 说明 |
+| --- | --- |
+| start | `session_id`、`intent`、`agent_used`、`used_context_messages` |
+| chunk | `content`，逐步返回文本分片 |
+| done | `session_id`、`answer`、`intent`、`agent_used` |
+
+### 5.3 会话历史查询
 - 接口路径：`GET /agent/sessions/{session_id}/history`
 - 请求方式：`GET`
 - 请求参数（Query）：
@@ -301,7 +327,7 @@
 
 `messages` 每项字段：`session_id`、`user_id`、`role`、`content`、`intent`、`agent_used`、`created_at`。
 
-### 5.3 RAG 入库
+### 5.4 RAG 入库
 - 接口路径：`POST /rag/ingest`
 - 请求方式：`POST`
 - 请求参数：
@@ -310,7 +336,7 @@
 | --- | --- | --- | --- |
 | input_path | string | 是 | 文档或目录路径 |
 
-### 5.4 RAG 检索
+### 5.5 RAG 检索
 - 接口路径：`POST /rag/retrieve`
 - 请求方式：`POST`
 - 请求参数：
@@ -320,7 +346,7 @@
 | query | string | 是 | 检索问题 |
 | top_k | int | 否 | 默认 5 |
 
-### 5.5 Tool Calling
+### 5.6 Tool Calling
 - 接口路径：`GET /tools/available`
   - 返回可用工具定义
 - 接口路径：`POST /tools/execute`

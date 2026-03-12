@@ -1,9 +1,16 @@
 package com.patientagent.client.agent.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 public class AgentChatRequest {
 
+    @JsonProperty("session_no")
     private String sessionNo;
+
+    @JsonProperty("user_id")
     private Long userId;
+
+    @JsonProperty("query")
     private String query;
 
     public String getSessionNo() {

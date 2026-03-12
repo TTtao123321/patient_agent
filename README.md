@@ -9,14 +9,19 @@
 
 当前仓库已经落地并可运行的核心能力：
 - Spring Boot 用户模块：注册、登录、`/me`
-- Spring Boot 聊天模块：发送消息、历史分页
+- Spring Boot 聊天模块：同步发送、异步发送、SSE 流式回答、历史分页
 - Java -> Python Agent HTTP 调用链
-- FastAPI 多 Agent 路由（Symptom/Report/Knowledge）
+- Java -> RabbitMQ -> Python Agent 异步任务链路
+- FastAPI 多 Agent 路由（Symptom/Report/Knowledge/Record）
+- Router Agent：LLM 意图识别 + 关键词回退
 - RAG 入库与检索接口（Milvus）
 - Tool Calling 机制（4 个医疗工具）
 - 聊天记忆机制：
   - Redis 短期记忆（会话上下文）
   - MySQL 历史记录（按 `session_id` 可查询）
+- 流式回答机制：
+  - FastAPI `StreamingResponse`
+  - Java `SseEmitter` 代理转发
 
 ## 技术栈
 
@@ -55,10 +60,12 @@ patient_agent/
 - `POST /api/v1/users/login`
 - `GET /api/v1/users/me`
 - `POST /api/v1/chat/messages/send`
+- `POST /api/v1/chat/messages/stream`
 - `GET /api/v1/chat/sessions/{sessionNo}/messages`
 
 ### FastAPI（对后端）
 - `POST /agent/chat`
+- `POST /agent/chat/stream`
 - `GET /agent/sessions/{session_id}/history`
 - `POST /rag/ingest`
 - `POST /rag/retrieve`
@@ -116,6 +123,45 @@ curl -X POST http://127.0.0.1:8000/agent/chat -H 'Content-Type: application/json
 
 curl "http://127.0.0.1:8000/agent/sessions/$SESSION_ID/history?limit=20"
 ```
+
+## 异步任务示例
+
+Spring Boot 发送用户消息后，先落用户消息，再把 AI 任务投递到 RabbitMQ，接口立即返回 `QUEUED`。
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/v1/chat/messages/send \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":1,"title":"异步问诊","sceneType":"mixed","content":"我最近一直咳嗽两周，还伴有低烧。"}'
+```
+
+随后可通过历史接口轮询 AI 回复：
+
+```bash
+curl "http://127.0.0.1:8080/api/v1/chat/sessions/{sessionNo}/messages?page=1&pageSize=20"
+```
+
+## 流式回答示例
+
+FastAPI 直接流式输出：
+
+```bash
+curl -N -X POST http://127.0.0.1:8000/agent/chat/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"stream_demo_001","user_id":1,"query":"我最近一直咳嗽，还伴有低烧，怎么办？"}'
+```
+
+Java 后端 SSE 代理输出：
+
+```bash
+curl -N -X POST http://127.0.0.1:8080/api/v1/chat/messages/stream \
+  -H 'Content-Type: application/json' \
+  -d '{"userId":1,"title":"流式问诊","sceneType":"mixed","content":"我最近一直咳嗽，还伴有低烧，怎么办？"}'
+```
+
+SSE 事件包含：
+- `start`：返回 `session_id`、`intent`、`agent_used`
+- `chunk`：逐步返回文本片段
+- `done`：返回最终完整回答
 
 ## 文档索引
 
