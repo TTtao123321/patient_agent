@@ -204,3 +204,31 @@
 | updated_at | DATETIME | 更新时间 |
 | is_deleted | TINYINT | 逻辑删除标记 |
 | deleted_at | DATETIME | 删除时间 |
+
+## 6. Agent 会话历史表 agent_chat_history
+
+### 表用途
+FastAPI 聊天记忆模块使用的历史消息表，用于按 `session_id` 查询多轮会话历史。
+
+### 主键
+- `id`
+
+### 主要索引
+- `idx_agent_chat_history_session_created`：会话 + 时间索引
+- `idx_agent_chat_history_user_created`：用户 + 时间索引
+
+### 字段说明
+| 字段名 | 类型 | 说明 |
+| --- | --- | --- |
+| id | BIGINT | 主键 |
+| session_id | VARCHAR(64) | 会话 ID（FastAPI 侧） |
+| user_id | BIGINT | 用户 ID |
+| role | VARCHAR(16) | 角色：`user`/`assistant` |
+| content | TEXT | 消息内容 |
+| intent | VARCHAR(64) | 路由意图（assistant 消息可用） |
+| agent_used | VARCHAR(64) | 实际处理 Agent（assistant 消息可用） |
+| created_at | DATETIME | 创建时间 |
+
+### 备注
+- 该表由 FastAPI 运行时自动执行 `CREATE TABLE IF NOT EXISTS` 创建。
+- 短期上下文存在 Redis，长期历史落在该表。

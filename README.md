@@ -1,77 +1,132 @@
 # patient_agent
 
-医疗智能 Agent 系统（患者侧）项目，用于：
+医疗智能 Agent 系统（患者侧），当前聚焦以下场景：
 - 症状咨询
 - 检查报告解读
 - 医疗知识问答
 
-技术栈：
-- 前端：React（可替换 Vue）
-- 后端：Java Spring Boot
-- AI Agent：Python FastAPI
-- AI：Ollama + Qwen（本地模型）
-- RAG：Milvus 向量库 + 医疗知识库
-- 基础设施：MySQL、Redis、RabbitMQ
+## 项目现状
 
-## 系统架构
+当前仓库已经落地并可运行的核心能力：
+- Spring Boot 用户模块：注册、登录、`/me`
+- Spring Boot 聊天模块：发送消息、历史分页
+- Java -> Python Agent HTTP 调用链
+- FastAPI 多 Agent 路由（Symptom/Report/Knowledge）
+- RAG 入库与检索接口（Milvus）
+- Tool Calling 机制（4 个医疗工具）
+- 聊天记忆机制：
+  - Redis 短期记忆（会话上下文）
+  - MySQL 历史记录（按 `session_id` 可查询）
 
-系统采用多 Agent 架构：
-- `Router Agent`：意图识别与任务路由
-- `Symptom Agent`：症状咨询与初步分诊
-- `Report Agent`：检查报告结构化解读
-- `Knowledge Agent`：RAG 检索增强问答
+## 技术栈
 
-核心调用链：
-1. 前端发起问题/上传报告到 Spring Boot。
-2. Spring Boot 管理会话和鉴权，调用 FastAPI Agent 服务。
-3. Router Agent 路由到对应 Agent（可并行）。
-4. Knowledge Agent 通过 RAG（Milvus）检索知识并生成回答。
-5. 结果回写 MySQL/Redis，并返回前端展示。
+- 前端：`React`（目录已预留，当前未落地页面代码）
+- 业务后端：`Java 17 + Spring Boot 3.3.2`
+- AI 服务：`Python FastAPI`
+- 模型：`Ollama + Qwen`
+- RAG：`LangChain + Milvus + bge-m3`
+- 基础设施：`MySQL`、`Redis`、`RabbitMQ`
 
-详细架构说明见：`docs/architecture.md`
-
-## 项目目录结构
+## 仓库结构
 
 ```text
 patient_agent/
 ├── README.md
 ├── docs/
-│   └── architecture.md
-├── services/
-│   ├── web-frontend/                  # React/Vue 前端工程
-│   ├── backend-springboot/            # Java 业务后端
-│   │   ├── src/main/java/com/patientagent/
-│   │   ├── src/main/resources/
-│   │   └── src/test/java/com/patientagent/
-│   └── ai-agent-fastapi/              # Python 多 Agent 服务
-│       ├── app/
-│       │   ├── api/                   # FastAPI 路由层
-│       │   ├── agents/                # Router/Symptom/Report/Knowledge Agent
-│       │   ├── core/                  # 配置、日志、安全、中间件
-│       │   ├── rag/                   # 检索、重排、知识入库
-│       │   └── models/                # 请求/响应模型
-│       └── tests/
-├── infra/
-│   ├── docker/                        # compose 与部署脚本
-│   ├── mysql/init/                    # MySQL 初始化脚本
-│   ├── redis/                         # Redis 配置
-│   ├── rabbitmq/                      # RabbitMQ 配置
-│   ├── milvus/                        # Milvus 配置
-│   └── ollama/                        # Ollama 模型配置
-├── knowledge_base/
-│   ├── raw/                           # 原始医疗文档
-│   ├── processed/                     # 清洗和切片后的文档
-│   └── vector_indexes/                # 向量索引导出/备份
+│   ├── architecture.md
+│   └── database-design.md
 ├── shared/
-│   └── api-contracts/                 # 前后端/服务间接口契约
-├── scripts/                           # 开发与运维脚本
+│   └── api-contracts/
+│       └── rest-api-design.md
+├── services/
+│   ├── backend-springboot/            # Java 业务后端（已实现）
+│   ├── ai-agent-fastapi/              # Python Agent 服务（已实现）
+│   └── web-frontend/                  # 前端目录（预留）
+├── infra/
+├── knowledge_base/
+├── scripts/
 └── tests/
-	├── integration/                   # 跨服务集成测试
-	└── e2e/                           # 端到端测试
 ```
 
-## 下一步建议
+## 关键接口
 
-1. 先确定 `shared/api-contracts` 中的统一请求响应格式（含 `trace_id`、`citations`、`risk_level`）。
-2. 优先落地 `Router Agent` 和 `Knowledge Agent`，尽快跑通最小可用 RAG 闭环。
-3. 用 `docker-compose` 拉起 MySQL/Redis/RabbitMQ/Milvus/Ollama 后再接入前后端。
+### Spring Boot（对前端）
+- `POST /api/v1/users/register`
+- `POST /api/v1/users/login`
+- `GET /api/v1/users/me`
+- `POST /api/v1/chat/messages/send`
+- `GET /api/v1/chat/sessions/{sessionNo}/messages`
+
+### FastAPI（对后端）
+- `POST /agent/chat`
+- `GET /agent/sessions/{session_id}/history`
+- `POST /rag/ingest`
+- `POST /rag/retrieve`
+- `GET /tools/available`
+- `POST /tools/execute`
+- `POST /tools/batch`
+
+## 本地启动指南
+
+### 1. 后端 Spring Boot
+
+```bash
+cd services/backend-springboot
+mvn -q -DskipTests compile
+mvn spring-boot:run
+```
+
+默认读取 `services/backend-springboot/src/main/resources/application.yml`，当前配置为：
+- MySQL: `101.126.81.197:3307`
+- Redis: `101.126.81.197:6389`
+- RabbitMQ: `101.126.81.197:5672`
+- Agent base-url: `http://localhost:8000`
+
+### 2. AI Agent FastAPI
+
+```bash
+cd services/ai-agent-fastapi
+/opt/homebrew/bin/python3.12 -m venv .venv
+./.venv/bin/pip install -U pip
+./.venv/bin/pip install \
+  "fastapi>=0.111.0" "uvicorn[standard]>=0.30.0" \
+  "langchain>=0.3.0,<0.4.0" "langchain-community>=0.3.0,<0.4.0" \
+  "langchain-huggingface>=0.1.2,<0.2.0" "langchain-milvus>=0.1.6,<0.2.0" "langchain-ollama>=0.2.0,<0.3.0" \
+  "pydantic>=2.8.0" "pymilvus>=2.4.0" "pypdf>=4.2.0" \
+  "redis>=5.0.0" "pika>=1.3.0" "mysql-connector-python>=9.0.0"
+./.venv/bin/python -m uvicorn app.main:app --app-dir . --host 127.0.0.1 --port 8000
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+## 多轮记忆验证示例
+
+```bash
+SESSION_ID=sess_demo_001
+
+curl -X POST http://127.0.0.1:8000/agent/chat -H 'Content-Type: application/json' \
+  -d '{"session_id":"'"$SESSION_ID"'","user_id":1,"query":"我咳嗽两周了"}'
+
+curl -X POST http://127.0.0.1:8000/agent/chat -H 'Content-Type: application/json' \
+  -d '{"session_id":"'"$SESSION_ID"'","user_id":1,"query":"晚上更严重"}'
+
+curl "http://127.0.0.1:8000/agent/sessions/$SESSION_ID/history?limit=20"
+```
+
+## 文档索引
+
+- 总体架构：`docs/architecture.md`
+- 数据库设计：`docs/database-design.md`
+- REST API 设计：`shared/api-contracts/rest-api-design.md`
+- FastAPI 模块说明：`services/ai-agent-fastapi/README.md`
+- Tool Calling 细节：`TOOL_CALLING_IMPLEMENTATION.md`
+
+## 注意事项
+
+- 仓库已忽略 `.venv` 与 `__pycache__`，避免提交本地环境文件。
+- `services/web-frontend` 当前为空目录，前端尚未实现。
+- AI 依赖建议使用 `0.3.x` 的 LangChain 兼容线，避免导入路径不兼容问题。

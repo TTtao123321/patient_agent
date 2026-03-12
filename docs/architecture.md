@@ -12,6 +12,14 @@
 - Report Agent
 - Knowledge Agent
 
+## 1.1 当前实现状态（2026-03）
+已落地模块：
+- Spring Boot 用户与聊天模块（注册、登录、发送消息、历史查询）
+- Java -> FastAPI 的 Agent HTTP 调用
+- FastAPI 路由 Agent 与 RAG 检索接口
+- Tool Calling（4 个医疗工具）
+- 聊天记忆机制：Redis 短期记忆 + MySQL 历史记录（支持 `session_id`）
+
 ## 2. 总体架构（逻辑视图）
 
 ### 2.1 前端层（Web）

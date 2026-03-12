@@ -256,98 +256,79 @@
 
 - 返回结构：分页结构，`items` 每项包含 `session_id`、`title`、`scene_type`、`last_message_at`、`session_status`。
 
-## 5. Agent 调用（后端对 AI Agent 服务）
+## 5. FastAPI 内部接口（当前实现）
 
-说明：本模块是 Spring Boot 调用 FastAPI 的内部 REST 接口，通常不直接暴露给前端。
+说明：本模块是 Spring Boot 调用 FastAPI 的内部接口，通常不直接暴露给前端。
 
-### 5.1 统一聊天入口（Router）
+### 5.1 统一聊天入口（Router + Memory）
 - 接口路径：`POST /agent/chat`
 - 请求方式：`POST`
 - 请求参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| trace_id | string | 是 | 链路追踪ID |
-| session_no | string | 是 | 会话编号 |
-| user_id | long | 是 | 用户ID |
+| session_id | string | 否 | 会话 ID（推荐） |
+| session_no | string | 否 | 兼容字段（与 session_id 二选一） |
+| user_id | long | 是 | 用户 ID |
 | query | string | 是 | 用户问题 |
-| context | object | 否 | 会话上下文 |
-| history | array | 否 | 对话历史 |
 
-- 返回结构（data）：
+- 返回结构：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
+| session_id | string | 归一化后的会话 ID |
 | answer | string | 回答内容 |
 | intent | string | 路由意图 |
 | agent_used | string | 命中的 Agent |
-| risk_level | string | 风险等级 |
-| citations | array | 引用来源 |
-| next_steps | array | 下一步建议 |
-| memory_patch | object | 记忆更新片段 |
+| used_context_messages | int | 本次使用的上下文消息条数 |
 
-### 5.2 报告解读
-- 接口路径：`POST /agent/report/interpret`
-- 请求方式：`POST`
-- 请求参数：
+### 5.2 会话历史查询
+- 接口路径：`GET /agent/sessions/{session_id}/history`
+- 请求方式：`GET`
+- 请求参数（Query）：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| trace_id | string | 是 | 链路ID |
-| report_id | long | 是 | 报告ID |
-| report_text | string | 否 | 报告文本 |
-| parsed_json | object | 否 | 结构化报告 |
-| user_profile | object | 否 | 用户画像 |
+| limit | int | 否 | 默认 50 |
 
-- 返回结构（data）：
+- 返回结构：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| interpretation_summary | string | 报告解读 |
-| abnormal_items | array | 异常项列表 |
-| risk_level | string | 风险等级 |
-| suggestions | array | 建议 |
+| session_id | string | 会话 ID |
+| total | int | 返回消息条数 |
+| messages | array | 历史消息列表 |
 
-### 5.3 知识问答（RAG）
-- 接口路径：`POST /agent/knowledge/ask`
+`messages` 每项字段：`session_id`、`user_id`、`role`、`content`、`intent`、`agent_used`、`created_at`。
+
+### 5.3 RAG 入库
+- 接口路径：`POST /rag/ingest`
 - 请求方式：`POST`
 - 请求参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| trace_id | string | 是 | 链路ID |
-| query | string | 是 | 问题 |
+| input_path | string | 是 | 文档或目录路径 |
+
+### 5.4 RAG 检索
+- 接口路径：`POST /rag/retrieve`
+- 请求方式：`POST`
+- 请求参数：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| query | string | 是 | 检索问题 |
 | top_k | int | 否 | 默认 5 |
-| filters | object | 否 | 检索过滤条件 |
 
-- 返回结构（data）：
+### 5.5 Tool Calling
+- 接口路径：`GET /tools/available`
+  - 返回可用工具定义
+- 接口路径：`POST /tools/execute`
+  - 请求：`tool_name` + `parameters`
+- 接口路径：`POST /tools/batch`
+  - 请求：`tool_calls[]`
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| answer | string | 回答 |
-| citations | array | 引用片段 |
-| retrieval_docs | array | 召回文档元信息 |
-
-### 5.4 Tool Calling 执行
-- 接口路径：`POST /agent/tools/execute`
-- 请求方式：`POST`
-- 请求参数：
-
-| 参数 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| trace_id | string | 是 | 链路ID |
-| tool_name | string | 是 | 工具名 |
-| arguments | object | 是 | 工具参数 |
-| timeout_ms | int | 否 | 默认 3000 |
-
-- 返回结构（data）：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| tool_name | string | 工具名 |
-| success | boolean | 是否成功 |
-| result | object | 工具执行结果 |
-| error | string | 失败时错误信息 |
+当前实现工具：`get_medical_report`、`get_medical_record`、`search_drug`、`search_department`。
 
 ## 6. 错误码建议
 
