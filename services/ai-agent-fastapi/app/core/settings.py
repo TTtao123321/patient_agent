@@ -25,6 +25,14 @@ class Settings:
     mysql_database: str = os.getenv("MYSQL_DATABASE", "patient_agent")
     mysql_pool_size: int = int(os.getenv("MYSQL_POOL_SIZE", "5"))
 
+    rabbitmq_host: str = os.getenv("RABBITMQ_HOST", "101.126.81.197")
+    rabbitmq_port: int = int(os.getenv("RABBITMQ_PORT", "5672"))
+    rabbitmq_username: str = os.getenv("RABBITMQ_USERNAME", "admin")
+    rabbitmq_password: str = os.getenv("RABBITMQ_PASSWORD", "admin")
+    rabbitmq_virtual_host: str = os.getenv("RABBITMQ_VHOST", "/")
+    rabbitmq_chat_task_queue: str = os.getenv("RABBITMQ_CHAT_TASK_QUEUE", "chat.task.queue")
+    rabbitmq_consumer_enabled: bool = os.getenv("RABBITMQ_CONSUMER_ENABLED", "true").lower() == "true"
+
     short_term_message_limit: int = int(os.getenv("SHORT_TERM_MESSAGE_LIMIT", "40"))
     context_message_limit: int = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "12"))
 

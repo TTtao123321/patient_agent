@@ -6,6 +6,7 @@ public class SendMessageResponse {
     private Long userMessageId;
     private Long agentMessageId;
     private String answer;
+    private String taskStatus;
 
     public String getSessionNo() {
         return sessionNo;
@@ -37,5 +38,13 @@ public class SendMessageResponse {
 
     public void setAnswer(String answer) {
         this.answer = answer;
+    }
+
+    public String getTaskStatus() {
+        return taskStatus;
+    }
+
+    public void setTaskStatus(String taskStatus) {
+        this.taskStatus = taskStatus;
     }
 }

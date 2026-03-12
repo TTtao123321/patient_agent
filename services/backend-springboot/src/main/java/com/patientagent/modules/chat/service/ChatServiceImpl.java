@@ -1,6 +1,5 @@
 package com.patientagent.modules.chat.service;
 
-import com.patientagent.client.agent.AgentClient;
 import com.patientagent.modules.chat.dto.ChatHistoryResponse;
 import com.patientagent.modules.chat.dto.ChatMessageItemResponse;
 import com.patientagent.modules.chat.dto.SendMessageRequest;
@@ -24,19 +23,20 @@ import java.util.stream.Collectors;
 public class ChatServiceImpl implements ChatService {
 
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private static final String QUEUED_ANSWER = "AI 任务已提交，正在异步处理中。";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
-    private final AgentClient agentClient;
+    private final AiTaskPublisher aiTaskPublisher;
 
     public ChatServiceImpl(
             ChatSessionRepository chatSessionRepository,
             ChatMessageRepository chatMessageRepository,
-            AgentClient agentClient
+            AiTaskPublisher aiTaskPublisher
     ) {
         this.chatSessionRepository = chatSessionRepository;
         this.chatMessageRepository = chatMessageRepository;
-        this.agentClient = agentClient;
+        this.aiTaskPublisher = aiTaskPublisher;
     }
 
     @Override
@@ -48,19 +48,19 @@ public class ChatServiceImpl implements ChatService {
         ChatMessageEntity userMessage = buildUserMessage(request, session, nextSeq);
         userMessage = chatMessageRepository.save(userMessage);
 
-        String aiAnswer = agentClient.chat(session.getSessionNo(), request.getUserId(), request.getContent());
-        ChatMessageEntity agentMessage = buildAgentMessage(session, nextSeq + 1, aiAnswer);
-        agentMessage = chatMessageRepository.save(agentMessage);
+        aiTaskPublisher.publish(session.getSessionNo(), request.getUserId(), request.getContent());
 
         session.setLastMessageAt(LocalDateTime.now());
         session.setCurrentAgent("router");
+        session.setSessionStatus("PROCESSING");
         chatSessionRepository.save(session);
 
         SendMessageResponse response = new SendMessageResponse();
         response.setSessionNo(session.getSessionNo());
         response.setUserMessageId(userMessage.getId());
-        response.setAgentMessageId(agentMessage.getId());
-        response.setAnswer(agentMessage.getContent());
+        response.setAgentMessageId(null);
+        response.setAnswer(QUEUED_ANSWER);
+        response.setTaskStatus("QUEUED");
         return response;
     }
 
@@ -122,20 +122,6 @@ public class ChatServiceImpl implements ChatService {
         entity.setContent(request.getContent());
         return entity;
     }
-
-    private ChatMessageEntity buildAgentMessage(ChatSessionEntity session, int sequenceNo, String content) {
-        ChatMessageEntity entity = new ChatMessageEntity();
-        entity.setMessageNo(generateMessageNo());
-        entity.setSessionId(session.getId());
-        entity.setUserId(session.getUserId());
-        entity.setSenderType("AGENT");
-        entity.setAgentType("router");
-        entity.setMessageType("TEXT");
-        entity.setSequenceNo(sequenceNo);
-        entity.setContent(content);
-        return entity;
-    }
-
     private ChatMessageItemResponse toItem(ChatMessageEntity msg) {
         ChatMessageItemResponse item = new ChatMessageItemResponse();
         item.setMessageId(msg.getId());
