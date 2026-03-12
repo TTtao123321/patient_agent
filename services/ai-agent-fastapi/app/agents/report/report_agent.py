@@ -1,34 +1,27 @@
+import json
+
 from app.agents.base.base_agent import BaseAgent
+from app.services.report.report_structured_parser import ReportStructuredParser
 
 
 class ReportAgent(BaseAgent):
     """Agent for handling medical report analysis queries."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.parser = ReportStructuredParser()
     
     def handle(self, query: str) -> str:
         """
-        Handle medical report analysis query.
+        Handle medical report analysis query and return structured JSON.
         
-        May call medical report tool to retrieve user's reports.
+        The result includes extracted indicators, abnormality judgement,
+        medical explanations, and raw report context.
         """
-        response = "[Report Agent] "
-        
-        # Try to get medical reports
-        # In a real scenario, we would extract user_id from context
         result = self.call_tool("get_medical_report", user_id=1, limit=3)
+        reports = []
         if result["success"] and result["data"]:
             reports = result["data"].get("reports", [])
-            if reports:
-                response += "已检索到您的医疗报告列表。"
-                for report in reports[:2]:
-                    response += (
-                        f"\n- {report.get('report_date')} {report.get('report_title')}"
-                        f"({report.get('risk_level')}): {report.get('interpretation_summary', '暂无解读')}"
-                    )
-                response += "\n"
-            else:
-                response += "暂未找到相关医疗报告。"
-        else:
-            response += "未能检索到医疗报告。"
-        
-        response += "请提供具体的报告数据、关键指标和参考范围，以便进行更准确的解读。"
-        return response
+
+        structured_result = self.parser.parse(query=query, reports=reports)
+        return structured_result.model_dump_json(ensure_ascii=False)
