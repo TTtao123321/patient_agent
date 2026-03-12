@@ -1,0 +1,9 @@
+{
+  "properties": [
+    {
+      "name": "agent.base-url",
+      "type": "java.lang.String",
+      "description": "FastAPI Agent service base URL."
+    }
+  ]
+}
