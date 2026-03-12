@@ -1,13 +1,29 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AgentChatRequest(BaseModel):
-    session_no: str = Field(..., description="Chat session number")
+    session_id: str | None = Field(default=None, description="Chat session id")
+    session_no: str | None = Field(default=None, description="Backward-compatible chat session number")
     user_id: int = Field(..., description="User id")
     query: str = Field(..., description="User input text")
 
+    @model_validator(mode="after")
+    def validate_session_field(self) -> "AgentChatRequest":
+        if not self.session_id and not self.session_no:
+            raise ValueError("session_id is required")
+        return self
+
+    def get_session_id(self) -> str:
+        if self.session_id:
+            return self.session_id
+        if self.session_no:
+            return self.session_no
+        raise ValueError("session_id is required")
+
 
 class AgentChatResponse(BaseModel):
+    session_id: str
     answer: str
     intent: str
     agent_used: str
+    used_context_messages: int = 0

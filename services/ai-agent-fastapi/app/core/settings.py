@@ -9,6 +9,25 @@ class Settings:
     chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "800"))
     chunk_overlap: int = int(os.getenv("RAG_CHUNK_OVERLAP", "120"))
 
+    redis_host: str = os.getenv("REDIS_HOST", "101.126.81.197")
+    redis_port: int = int(os.getenv("REDIS_PORT", "6389"))
+    redis_password: str | None = os.getenv("REDIS_PASSWORD", "123456")
+    redis_db: int = int(os.getenv("REDIS_DB", "0"))
+    redis_connect_timeout_seconds: int = int(os.getenv("REDIS_CONNECT_TIMEOUT_SECONDS", "2"))
+    redis_read_timeout_seconds: int = int(os.getenv("REDIS_READ_TIMEOUT_SECONDS", "2"))
+    redis_chat_key_prefix: str = os.getenv("REDIS_CHAT_KEY_PREFIX", "patient_agent:chat")
+    redis_chat_ttl_seconds: int = int(os.getenv("REDIS_CHAT_TTL_SECONDS", "86400"))
+
+    mysql_host: str = os.getenv("MYSQL_HOST", "101.126.81.197")
+    mysql_port: int = int(os.getenv("MYSQL_PORT", "3307"))
+    mysql_user: str = os.getenv("MYSQL_USER", "root")
+    mysql_password: str = os.getenv("MYSQL_PASSWORD", "123456")
+    mysql_database: str = os.getenv("MYSQL_DATABASE", "patient_agent")
+    mysql_pool_size: int = int(os.getenv("MYSQL_POOL_SIZE", "5"))
+
+    short_term_message_limit: int = int(os.getenv("SHORT_TERM_MESSAGE_LIMIT", "40"))
+    context_message_limit: int = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "12"))
+
     @property
     def milvus_uri(self) -> str:
         return f"http://{self.milvus_host}:{self.milvus_port}"
