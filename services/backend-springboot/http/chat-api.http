@@ -1,0 +1,163 @@
+@baseUrl = http://127.0.0.1:8080
+@userId = 4
+# 执行"异步发送（新会话）"后，将 data.sessionNo 填到此处，再运行历史查询
+@sessionNo = Sc90630b5610240ec8073e8456cd8bc7
+@invalidSessionNo = S_NOT_EXISTS_1234567890
+
+# ========================================================================
+# AI 回复在哪里？
+#
+# 【异步模式 /messages/send】
+#   发送后立即返回 data.taskStatus=QUEUED，AI 在后台通过 RabbitMQ 处理。
+#   等待约 5~15 秒后，调用"历史消息查询"接口（见本文件下方），
+#   senderType=AGENT 的条目即为 AI 回复内容。
+#
+# 【流式模式 /messages/stream】
+#   AI 回复通过 SSE 事件实时推送，事件序列：
+#     data: {"event":"start",  ...session_id / intent / agent_used}
+#     data: {"event":"chunk",  "content":"文字片段"}  ← 可多次
+#     data: {"event":"done",   "answer":"完整回答"}
+#   VS Code REST Client 可展示；用 curl -N 体验更直观：
+#     curl -N -X POST http://127.0.0.1:8080/api/v1/chat/messages/stream \
+#       -H 'Content-Type: application/json' \
+#       -d '{"userId":4,"title":"流式测试","sceneType":"mixed","content":"我咳嗽了。"}'
+# ========================================================================
+
+###
+# [步骤1] 异步发送消息（新会话）
+# 预期：code=0，data.taskStatus=QUEUED，data.sessionNo 为新会话编号
+# ⚠️  AI 回复不在此响应里，需等待后执行 步骤3 历史查询才能看到
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "userId": {{userId}},
+  "title": "HTTP异步测试会话",
+  "sceneType": "mixed",
+  "content": "我最近一直咳嗽两周，还伴有低烧。",
+  "messageType": "TEXT"
+}
+
+###
+# [步骤2] 多轮追问 — 在同一会话内继续对话（异步）
+# 前提：顶部 @sessionNo 已填入步骤1返回的 data.sessionNo
+# 说明：后端会把本条消息追加到原会话，FastAPI 会从 Redis 读取上下文，
+#       AI 可以「记住」步骤1的咳嗽低烧症状，给出追问回复
+# ⚠️  AI 回复不在此响应，等待后执行步骤3历史查询可看到完整对话
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "sessionNo": "{{sessionNo}}",
+  "userId": {{userId}},
+  "sceneType": "mixed",
+  "content": "我夜里咳嗽更严重，还有些出汗，是否需要去医院？",
+  "messageType": "TEXT"
+}
+
+###
+# [步骤2c] 多轮追问第二轮（异步）
+# 继续在同一会话追问，AI 应能结合前两轮上下文回答
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "sessionNo": "{{sessionNo}}",
+  "userId": {{userId}},
+  "sceneType": "mixed",
+  "content": "我之前说的低烧大概是37.5度，这算严重吗？",
+  "messageType": "TEXT"
+}
+
+###
+# [步骤2b] 流式发送消息（SSE）—— AI 回复实时可见
+# 预期：依次收到如下 SSE 事件（AI 回复直接在事件流里）：
+#   event: start  → {session_id, intent, agent_used}
+#   event: chunk  → {content: "文字片段"}   ← 多次，拼起来就是完整回答
+#   event: done   → {answer: "完整最终回答"}
+# 说明：VS Code REST Client 可直接展示；或用终端：
+#   curl -N -X POST http://127.0.0.1:8080/api/v1/chat/messages/stream \
+#     -H 'Content-Type: application/json' \
+#     -d '{"userId":4,"title":"流式测试","sceneType":"mixed","content":"我咳嗽了。"}'
+POST {{baseUrl}}/api/v1/chat/messages/stream
+Content-Type: application/json
+
+{
+  "userId": {{userId}},
+  "title": "HTTP流式测试会话",
+  "sceneType": "mixed",
+  "content": "我最近咳嗽两周还伴有低烧，请给出分步建议。",
+  "messageType": "TEXT"
+}
+
+###
+# [步骤2d] 流式多轮追问 — 在流式会话内继续对话
+# 前提：顶部 @sessionNo 已填入步骤2b返回的 data.sessionNo（可在事件流 start 事件里看到）
+# AI 会结合上一轮流式对话的上下文回答
+POST {{baseUrl}}/api/v1/chat/messages/stream
+Content-Type: application/json
+
+{
+  "sessionNo": "{{sessionNo}}",
+  "userId": {{userId}},
+  "sceneType": "mixed",
+  "content": "我刚才说的低烧是37.5度，这严重吗？",
+  "messageType": "TEXT"
+}
+
+###
+# [步骤3] 历史消息查询（异步 AI 回复在这里！）
+# 等待约 5~15 秒后执行此请求
+# 预期：data.items 中出现 senderType=AGENT 的条目，content 字段即为 AI 回复内容
+GET {{baseUrl}}/api/v1/chat/sessions/{{sessionNo}}/messages?page=1&pageSize=20
+
+###
+# [步骤3b] 历史消息查询（分页边界值）
+# 预期：服务端兜底处理（page<1 → 1，pageSize>100 → 100），不会报错
+GET {{baseUrl}}/api/v1/chat/sessions/{{sessionNo}}/messages?page=0&pageSize=1000
+
+###
+# 异常场景：消息内容为空（异步发送）
+# 预期：参数校验失败（400）
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "userId": {{userId}},
+  "title": "异常-空内容",
+  "sceneType": "mixed",
+  "content": "",
+  "messageType": "TEXT"
+}
+
+###
+# 异常场景：缺少 userId（异步发送）
+# 预期：参数校验失败（400）
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "title": "异常-缺少用户ID",
+  "sceneType": "mixed",
+  "content": "我头痛三天了",
+  "messageType": "TEXT"
+}
+
+###
+# 异常场景：不存在的 sessionNo 查询历史
+# 预期：业务异常（Session not found）
+GET {{baseUrl}}/api/v1/chat/sessions/{{invalidSessionNo}}/messages?page=1&pageSize=20
+
+###
+# 异常场景：不存在的 sessionNo 继续发送
+# 预期：业务异常（Session not found）
+POST {{baseUrl}}/api/v1/chat/messages/send
+Content-Type: application/json
+
+{
+  "sessionNo": "{{invalidSessionNo}}",
+  "userId": {{userId}},
+  "sceneType": "mixed",
+  "content": "继续追问一下",
+  "messageType": "TEXT"
+}

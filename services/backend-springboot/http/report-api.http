@@ -1,0 +1,133 @@
+@baseUrl = http://127.0.0.1:8080
+@userId = 1
+
+### 1) 上传检查报告（纯文本 rawText）
+POST {{baseUrl}}/api/v1/reports/upload
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="userId"
+
+{{userId}}
+--WebAppBoundary
+Content-Disposition: form-data; name="reportType"
+
+blood
+--WebAppBoundary
+Content-Disposition: form-data; name="reportTitle"
+
+血常规复查报告
+--WebAppBoundary
+Content-Disposition: form-data; name="hospitalName"
+
+市人民医院
+--WebAppBoundary
+Content-Disposition: form-data; name="departmentName"
+
+检验科
+--WebAppBoundary
+Content-Disposition: form-data; name="reportDate"
+
+2026-03-13
+--WebAppBoundary
+Content-Disposition: form-data; name="rawText"
+
+白细胞 12.6 (↑), 中性粒细胞比例 82% (↑), CRP 32 mg/L (↑), 血红蛋白 128 g/L。
+--WebAppBoundary--
+
+### 2) 上传检查报告（文件 + 元信息）
+POST {{baseUrl}}/api/v1/reports/upload
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="userId"
+
+{{userId}}
+--WebAppBoundary
+Content-Disposition: form-data; name="reportType"
+
+ct
+--WebAppBoundary
+Content-Disposition: form-data; name="reportTitle"
+
+胸部CT报告
+--WebAppBoundary
+Content-Disposition: form-data; name="hospitalName"
+
+市人民医院
+--WebAppBoundary
+Content-Disposition: form-data; name="departmentName"
+
+放射科
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="ct-report.txt"
+Content-Type: text/plain
+
+双肺纹理增多，右下肺散在小斑片影，建议结合临床与复查。
+--WebAppBoundary--
+
+### 3) 查询用户报告列表（无筛选）
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&page=1&pageSize=20
+
+### 4) 筛选 - 按报告类型
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&reportType=blood
+
+### 5) 筛选 - 按风险等级
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&riskLevel=HIGH
+
+### 6) 筛选 - 按时间范围
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&dateFrom=2026-01-01&dateTo=2026-03-31
+
+### 7) 筛选 - 组合（类型 + 风险 + 时间范围）
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&reportType=blood&riskLevel=MEDIUM&dateFrom=2026-01-01&dateTo=2026-12-31
+
+### 8) 筛选 - 按关联病历ID（病历→报告方向）
+GET {{baseUrl}}/api/v1/reports?userId={{userId}}&medicalRecordId=1
+
+### 9) 查询报告详情（把 reportNo 换成上传后返回值）
+@reportNo = REPLACE_ME
+GET {{baseUrl}}/api/v1/reports/{{reportNo}}?userId={{userId}}
+
+### 10) 修改报告元信息（PATCH，仅传需要改的字段）
+PATCH {{baseUrl}}/api/v1/reports/{{reportNo}}?userId={{userId}}
+Content-Type: application/json
+
+{
+  "reportTitle": "血常规复查报告（已修正）",
+  "hospitalName": "省人民医院",
+  "reportDate": "2026-03-14"
+}
+
+### 11) 修改报告 - 更新 rawText
+PATCH {{baseUrl}}/api/v1/reports/{{reportNo}}?userId={{userId}}
+Content-Type: application/json
+
+{
+  "rawText": "白细胞 9.2，中性粒细胞比例 68%，CRP 8 mg/L，各项指标恢复正常范围。"
+}
+
+### 12) 执行 AI 解读（把 reportNo 换成上传后返回值）
+POST {{baseUrl}}/api/v1/reports/{{reportNo}}/interpret?userId={{userId}}
+
+### 13) 查询报告关联的病历摘要（报告→病历方向）
+GET {{baseUrl}}/api/v1/reports/{{reportNo}}/medical-record?userId={{userId}}
+
+### 14) 软删除报告
+DELETE {{baseUrl}}/api/v1/reports/{{reportNo}}?userId={{userId}}
+
+### 15) 删除后验证：查询应返回 404
+GET {{baseUrl}}/api/v1/reports/{{reportNo}}?userId={{userId}}
+
+### 16) 负例：无权限查询（userId 换成其它用户）
+GET {{baseUrl}}/api/v1/reports/{{reportNo}}?userId=999999
+
+### 17) 负例：无权限修改
+PATCH {{baseUrl}}/api/v1/reports/{{reportNo}}?userId=999999
+Content-Type: application/json
+
+{
+  "reportTitle": "尝试越权修改"
+}
+
+### 18) 负例：无权限删除
+DELETE {{baseUrl}}/api/v1/reports/{{reportNo}}?userId=999999

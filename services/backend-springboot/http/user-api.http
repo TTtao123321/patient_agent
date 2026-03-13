@@ -1,0 +1,70 @@
+@baseUrl = http://127.0.0.1:8080
+@username = user_http_demo_001
+@password = 123456
+@phone = 13800000001
+@token = 9f277c06a3d74648a4a0133eee5cf99d
+
+###
+# 用户注册
+POST {{baseUrl}}/api/v1/users/register
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}",
+  "realName": "HTTP测试用户",
+  "gender": 2,
+  "birthDate": "2001-01-01",
+  "phone": "{{phone}}",
+  "email": "{{username}}@example.com"
+}
+
+###
+# 用户登录
+# 执行后，将返回结果中的 accessToken 填到顶部的 @token 变量
+POST {{baseUrl}}/api/v1/users/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+###
+# 获取当前登录用户信息
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{token}}
+
+###
+# 异常场景：重复注册
+POST {{baseUrl}}/api/v1/users/register
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}",
+  "realName": "HTTP测试用户",
+  "gender": 1,
+  "birthDate": "1995-01-01",
+  "phone": "{{phone}}",
+  "email": "{{username}}@example.com"
+}
+
+###
+# 异常场景：错误密码登录
+POST {{baseUrl}}/api/v1/users/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "wrong-password"
+}
+
+###
+# 异常场景：无效 token 查询当前用户
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer invalid_token_for_test
+
+###
+# 异常场景：缺少 Authorization 头
+GET {{baseUrl}}/api/v1/users/me

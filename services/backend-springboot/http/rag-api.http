@@ -1,0 +1,75 @@
+@baseUrl = http://127.0.0.1:8000
+@kbPath = /Users/taot/Desktop/projects/patient_agent/knowledge_base/raw
+@singleFilePath = /Users/taot/Desktop/projects/patient_agent/knowledge_base/raw/hospital_department_guide.md
+
+### 0) Service health (quick check)
+GET {{baseUrl}}/docs
+
+### 1) Ingest: full knowledge_base/raw directory
+POST {{baseUrl}}/rag/ingest
+Content-Type: application/json
+
+{
+  "input_path": "{{kbPath}}"
+}
+
+### 2) Ingest: single markdown file
+POST {{baseUrl}}/rag/ingest
+Content-Type: application/json
+
+{
+  "input_path": "{{singleFilePath}}"
+}
+
+### 3) Retrieve: symptom query (cough + low fever)
+POST {{baseUrl}}/rag/retrieve
+Content-Type: application/json
+
+{
+  "query": "I have had cough and low fever for 2 weeks, what should I do?",
+  "top_k": 3
+}
+
+### 4) Retrieve: department guidance query
+POST {{baseUrl}}/rag/retrieve
+Content-Type: application/json
+
+{
+  "query": "Which department should I visit for chest pain?",
+  "top_k": 3
+}
+
+### 5) Retrieve: blood lipids / glucose query
+POST {{baseUrl}}/rag/retrieve
+Content-Type: application/json
+
+{
+  "query": "What does high LDL and fasting glucose mean?",
+  "top_k": 3
+}
+
+### 6) Retrieve: top_k boundary (top_k = 1)
+POST {{baseUrl}}/rag/retrieve
+Content-Type: application/json
+
+{
+  "query": "How to manage hypertension and diabetes together?",
+  "top_k": 1
+}
+
+### 7) Retrieve: likely low-relevance query (no-hit style check)
+POST {{baseUrl}}/rag/retrieve
+Content-Type: application/json
+
+{
+  "query": "How to fix car engine noise?",
+  "top_k": 3
+}
+
+### 8) Ingest: invalid path (negative test)
+POST {{baseUrl}}/rag/ingest
+Content-Type: application/json
+
+{
+  "input_path": "/tmp/not-exists-rag-path"
+}

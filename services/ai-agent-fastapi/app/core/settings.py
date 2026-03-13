@@ -14,7 +14,7 @@ class Settings:
     slow_tool_call_threshold_ms: int = int(os.getenv("SLOW_TOOL_CALL_THRESHOLD_MS", "1000"))
 
     rag_collection_name: str = os.getenv("RAG_COLLECTION_NAME", "medical_knowledge")
-    milvus_host: str = os.getenv("MILVUS_HOST", "localhost")
+    milvus_host: str = os.getenv("MILVUS_HOST", "192.168.44.50")
     milvus_port: str = os.getenv("MILVUS_PORT", "19530")
     bge_m3_model_name: str = os.getenv("BGE_M3_MODEL_NAME", "BAAI/bge-m3")
     chunk_size: int = int(os.getenv("RAG_CHUNK_SIZE", "800"))
