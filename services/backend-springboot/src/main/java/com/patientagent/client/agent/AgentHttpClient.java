@@ -30,18 +30,34 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.function.Consumer;
 
+/**
+ * FastAPI Agent 服务的 HTTP 客户端适配器，实现 {@link AgentClient} 接口。
+ * <p>
+ * 提供两种调用模式：
+ * <ul>
+ *   <li>{@link #chat} — 使用 Spring {@code RestTemplate} 发起同步 POST 请求。</li>
+ *   <li>{@link #streamChat} — 使用 JDK11+ {@code HttpClient} 接收 SSE 流，逐帧解析后回调。</li>
+ * </ul>
+ * 调用均会将当前请求的 MDC traceId 通过 {@code X-Request-Id} 头传递给 FastAPI，
+ * 实现端到端链路追踪。
+ * </p>
+ */
 @Component
 public class AgentHttpClient implements AgentClient {
 
     private static final Logger log = LoggerFactory.getLogger(AgentHttpClient.class);
+
+    /** 慢 Agent 调用告警阈值（毫秒）。 */
     @Value("${app.monitoring.slow-agent-call-ms:1500}")
     private long slowAgentCallThresholdMs;
 
     private final RestTemplate restTemplate;
     private final AgentProperties agentProperties;
     private final ObjectMapper objectMapper;
+    /** JDK 原生 HTTP 客户端，用于 SSE 流式请求（Spring RestTemplate 不支持流式语义）。 */
     private final HttpClient httpClient;
 
+    /** 构造时初始化 JDK HttpClient，连接超时 5 秒。 */
     public AgentHttpClient(RestTemplate restTemplate, AgentProperties agentProperties, ObjectMapper objectMapper) {
         this.restTemplate = restTemplate;
         this.agentProperties = agentProperties;
@@ -63,6 +79,7 @@ public class AgentHttpClient implements AgentClient {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        // 将当前请求的 traceId 通过 X-Request-Id 头传递到 FastAPI，实现跨服务日志关联。
         String traceId = MDC.get(RequestTraceFilter.TRACE_ID_KEY);
         if (traceId != null && !traceId.isBlank()) {
             headers.set(RequestTraceFilter.REQUEST_ID_HEADER, traceId);
@@ -106,6 +123,7 @@ public class AgentHttpClient implements AgentClient {
 
             return parseAnswer(response.getBody());
         } catch (RestClientException ex) {
+            // 将底层 HTTP 错误包装为业务可读的异常。
             log.error("agent_chat_call_failed sessionNo={} userId={} error={}", sessionNo, userId, ex.getMessage());
             throw new IllegalStateException("Failed to call agent service: " + ex.getMessage(), ex);
         }
@@ -123,6 +141,7 @@ public class AgentHttpClient implements AgentClient {
 
         try {
             String requestBody = objectMapper.writeValueAsString(request);
+            // SSE 请求同样需要传递 traceId 头以关联流式调用的日志。
             String traceId = MDC.get(RequestTraceFilter.TRACE_ID_KEY);
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                     .header("Content-Type", "application/json")
@@ -152,6 +171,7 @@ public class AgentHttpClient implements AgentClient {
                 throw new IllegalStateException("Agent stream service returned invalid status: " + response.statusCode());
             }
 
+            // 逐帧解析 SSE 帧并回调上层服务。
             parseSseStream(response, eventConsumer);
             long latencyMs = System.currentTimeMillis() - startedAt;
             log.info(
@@ -180,6 +200,11 @@ public class AgentHttpClient implements AgentClient {
         }
     }
 
+    /**
+     * 解析 Agent 返回的 JSON 中的 answer 字段。
+     * FastAPI 当前返回的回答字段可能存在根层（{@code answer}）
+     * 或内嵌在 data 对象下（{@code data.answer}）。
+     */
     private String parseAnswer(JsonNode body) {
         if (body.hasNonNull("answer")) {
             return body.get("answer").asText();
@@ -190,6 +215,9 @@ public class AgentHttpClient implements AgentClient {
         throw new IllegalStateException("Agent response does not contain answer field");
     }
 
+    /**
+     * 按行解析 SSE 相应流，每遇到空行（事件分隔符）就将当前帧中转为事件并回调。
+     */
     private void parseSseStream(
             HttpResponse<java.io.InputStream> response,
             Consumer<AgentStreamEvent> eventConsumer
@@ -226,6 +254,10 @@ public class AgentHttpClient implements AgentClient {
         }
     }
 
+    /**
+     * 将一帧 SSE 数据解析为 {@link AgentStreamEvent} 并转发给上层回调。
+     * 如果数据缓冲区为空（如心跳帧）则跳过。
+     */
     private void dispatchSseEvent(
             String eventName,
             StringBuilder dataBuffer,
@@ -239,6 +271,7 @@ public class AgentHttpClient implements AgentClient {
         eventConsumer.accept(new AgentStreamEvent(eventName, dataNode));
     }
 
+    /** 确保 baseUrl 不为空且不以斜杠结尾，防止拼接出双斜杠路径。 */
     private String normalizeBaseUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new IllegalStateException("agent.base-url is not configured");

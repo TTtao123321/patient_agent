@@ -11,53 +11,75 @@ import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
 
+/**
+ * 聊天会话数据库实体，对应 {@code chat_session} 表。
+ * <p>
+ * 每个会话代表用户与 AI 的一段完整对话过程。
+ * {@code sceneType} 决定了路由到哪个 Agent，{@code currentAgent} 记录当前最新一次处理该会话的 Agent。
+ * </p>
+ */
 @Entity
 @Table(name = "chat_session")
 public class ChatSessionEntity {
 
+    /** 主键，数据库自增。 */
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** 会话业务编号，全局唯一，格式为 {@code S + 31位十六进制}。 */
     @Column(name = "session_no", nullable = false, unique = true, length = 32)
     private String sessionNo;
 
+    /** 会话所属用户 ID。 */
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
+    /** 关联的病历模块 ID（可为空）。 */
     @Column(name = "medical_record_id")
     private Long medicalRecordId;
 
+    /** 会话标题，前端展示用。 */
     @Column(name = "title", length = 128)
     private String title;
 
+    /** 场景类型，如 mixed / report_analysis，影响 Agent 路由逻辑。 */
     @Column(name = "scene_type", nullable = false, length = 32)
     private String sceneType;
 
+    /** 当前处理会话的 Agent 类型，随每次回复更新。 */
     @Column(name = "current_agent", length = 32)
     private String currentAgent;
 
+    /** 会话状态：{@code ACTIVE} / {@code PROCESSING} / {@code FAILED}。 */
     @Column(name = "session_status", nullable = false, length = 16)
     private String sessionStatus;
 
+    /** AI 生成的会话摘要（暂未实现，预留序。） */
     @Column(name = "summary")
     private String summary;
 
+    /** 会话开始时间。 */
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
 
+    /** 最近一条消息的发送时间，用于会话列表排序。 */
     @Column(name = "last_message_at")
     private LocalDateTime lastMessageAt;
 
+    /** 记录创建时间。 */
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    /** 记录最后更新时间。 */
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /** 软删除标志：0 = 正常，1 = 已删除。 */
     @Column(name = "is_deleted", nullable = false)
     private Integer isDeleted;
 
+    /** JPA 持久化前调用，自动设置默认字段。 */
     @PrePersist
     public void onCreate() {
         LocalDateTime now = LocalDateTime.now();
@@ -70,6 +92,7 @@ public class ChatSessionEntity {
         this.isDeleted = this.isDeleted == null ? 0 : this.isDeleted;
     }
 
+    /** JPA 更新前调用，自动刷新 {@code updatedAt} 字段。 */
     @PreUpdate
     public void onUpdate() {
         this.updatedAt = LocalDateTime.now();

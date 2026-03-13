@@ -3,19 +3,23 @@ package com.patientagent.client.agent.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Data transfer object for a single finding/observation from imaging or other reports.
+ * 影像报告或其它检查报告中单个发现 / 检查结果的数据传输对象。
  */
 public class FindingDto {
 
+    /** 发现项目名称，如「肾结来-oversize」。 */
     @JsonProperty("name")
     private String name;
 
+    /** 状态：{@code abnormal}（异常）或 {@code normal}（正常）。 */
     @JsonProperty("status")
-    private String status; // "abnormal", "normal"
+    private String status;
 
+    /** 对该发现的简短描述文字。 */
     @JsonProperty("summary")
     private String summary;
 
+    /** 该发现的医学解释，用通俗语言向患者说明其全含义。 */
     @JsonProperty("medical_explanation")
     private String medicalExplanation;
 

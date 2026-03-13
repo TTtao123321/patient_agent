@@ -3,25 +3,31 @@ package com.patientagent.client.agent.dto;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Metadata of a single medical report.
+ * 单张医学报告的元数据，包含报告编号、类型、日期和风险等级等。
  */
 public class ReportMetaDto {
 
+    /** 报告唯一编号。 */
     @JsonProperty("report_no")
     private String reportNo;
 
+    /** 报告标题，如「血常规检测报告」。 */
     @JsonProperty("report_title")
     private String reportTitle;
 
+    /** 报告类型：{@code blood} / {@code ct} / {@code mri} / {@code pathology} / {@code ultrasound} 等。 */
     @JsonProperty("report_type")
-    private String reportType; // "blood", "ct", "mri", "pathology", "ultrasound"
+    private String reportType;
 
+    /** 报告日期，格式：{@code YYYY-MM-DD}。 */
     @JsonProperty("report_date")
-    private String reportDate; // format: YYYY-MM-DD
+    private String reportDate;
 
+    /** 风险等级：{@code LOW} / {@code MEDIUM} / {@code HIGH}。 */
     @JsonProperty("risk_level")
-    private String riskLevel; // "LOW", "MEDIUM", "HIGH"
+    private String riskLevel;
 
+    /** 报告解读总结， Agent 生成的一句话概述。 */
     @JsonProperty("interpretation_summary")
     private String interpretationSummary;
 

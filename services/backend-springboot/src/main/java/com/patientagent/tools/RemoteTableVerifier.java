@@ -5,6 +5,11 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 
+/**
+ * 远程数据库表结构验证工具，检查那个 MySQL 实例中是否已存在五张核心业务表。
+ * <p>用于环境上线前检查或 CI/CD 流水线验证数据库有效性。</p>
+ * <p>用法：{@code java RemoteTableVerifier <host> <port> <database> <username> <password>}</p>
+ */
 public class RemoteTableVerifier {
 
     public static void main(String[] args) throws Exception {
@@ -22,6 +27,7 @@ public class RemoteTableVerifier {
         String url = "jdbc:mysql://" + host + ":" + port + "/" + database
                 + "?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true";
 
+        // 查询 information_schema，检查五张表是否存在并打印已存在的表名。
         String sql = "SELECT table_name FROM information_schema.tables "
                 + "WHERE table_schema = ? AND table_name IN "
                 + "('patient_user','medical_record','medical_report','chat_session','chat_message') "

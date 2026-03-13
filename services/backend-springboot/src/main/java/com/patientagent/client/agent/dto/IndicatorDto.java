@@ -4,28 +4,35 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
- * Data transfer object for a single medical indicator extracted from a report.
+ * 检验报告中单个医学指标的数据传输对象。
  */
 public class IndicatorDto {
 
+    /** 指标名称，如「总胆固醇（TC）」。 */
     @JsonProperty("name")
     private String name;
 
+    /** 指标数值。 */
     @JsonProperty("value")
     private Double value;
 
+    /** 单位，如 mmol/L。 */
     @JsonProperty("unit")
     private String unit;
 
+    /** 参考范围（下限和上限）。 */
     @JsonProperty("reference_range")
     private ReferencRangeDto referenceRange;
 
+    /** 结果状态：{@code low}（偏低）/ {@code normal}（正常）/ {@code high}（偏高）/ {@code unknown}。 */
     @JsonProperty("status")
-    private String status; // "low", "normal", "high", "unknown"
+    private String status;
 
+    /** 是否异常，如果超出参考范围则为 true。 */
     @JsonProperty("abnormal")
     private Boolean abnormal;
 
+    /** 该指标的医学解释，用通俗语言向患者说明其全含义。 */
     @JsonProperty("medical_explanation")
     private String medicalExplanation;
 
@@ -106,7 +113,7 @@ public class IndicatorDto {
     }
 
     /**
-     * Simple POJO for holding reference range (low, high).
+     * 参考范围简单 POJO，包含指标的正常下限和上限。
      */
     public static class ReferencRangeDto {
         @JsonProperty("low")

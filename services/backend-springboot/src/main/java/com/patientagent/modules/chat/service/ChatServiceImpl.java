@@ -27,17 +27,28 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
+/**
+ * 聊天应用服务实现，承担三项核心职责：
+ * <ol>
+ *   <li>管理聊天会话（{@code chat_session}）和消息（{@code chat_message}）在 MySQL 中的持久化。</li>
+ *   <li>异步发送消息时将 AI 任务投入 RabbitMQ 队列并立即返回，由后台 Worker 异步处理。</li>
+ *   <li>流式发送消息时在工作线程中调用 FastAPI SSE 接口，实时将事件推送给前端并在流结束后持久化回答。</li>
+ * </ol>
+ */
 @Service
 public class ChatServiceImpl implements ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatServiceImpl.class);
+    /** 日志中时间字段的格式化器。 */
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    /** 异步模式下返回给前端的占位回答。 */
     private static final String QUEUED_ANSWER = "AI 任务已提交，正在异步处理中。";
 
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
     private final AiTaskPublisher aiTaskPublisher;
     private final AgentClient agentClient;
+    /** 流式 SSE 转发的工作线程池，避免阻塞 Servlet 请求线程。 */
     private final ExecutorService streamingExecutor = Executors.newCachedThreadPool();
 
     public ChatServiceImpl(
@@ -56,12 +67,14 @@ public class ChatServiceImpl implements ChatService {
     @Transactional
     public SendMessageResponse sendMessage(SendMessageRequest request) {
         long startedAt = System.currentTimeMillis();
+        // 复用已有会话或新建会话。
         ChatSessionEntity session = resolveSession(request);
 
         int nextSeq = (int) chatMessageRepository.countBySessionIdAndIsDeleted(session.getId(), 0) + 1;
         ChatMessageEntity userMessage = buildUserMessage(request, session, nextSeq);
         userMessage = chatMessageRepository.save(userMessage);
 
+        // 异步模式：将 AI 任务投入消息队列，立即返回给调用方。
         aiTaskPublisher.publish(session.getSessionNo(), request.getUserId(), request.getContent());
 
         session.setLastMessageAt(LocalDateTime.now());
@@ -111,6 +124,7 @@ public class ChatServiceImpl implements ChatService {
             request.getContent() == null ? 0 : request.getContent().length(),
             System.currentTimeMillis() - startedAt
         );
+        // 在工作线程中执行 SSE 转发，避免阻塞 Servlet 请求线程。
         streamingExecutor.execute(() -> streamAgentResponse(emitter, request, session, nextSeq + 1));
         return emitter;
     }
@@ -143,6 +157,10 @@ public class ChatServiceImpl implements ChatService {
         return response;
     }
 
+    /**
+     * 复用已有会话或在没有提供 sessionNo 时新建会话。
+     * 新会话会持久化到数据库并以默认 router Agent 和 ACTIVE 状态启动。
+     */
     private ChatSessionEntity resolveSession(SendMessageRequest request) {
         if (request.getSessionNo() != null && !request.getSessionNo().isBlank()) {
             return chatSessionRepository.findBySessionNoAndIsDeleted(request.getSessionNo(), 0)
@@ -205,6 +223,10 @@ public class ChatServiceImpl implements ChatService {
         return item;
     }
 
+    /**
+     * 在工作线程中调用 FastAPI SSE 接口，逐帧推送事件给前端，
+     * 流结束后将完整回答和 Agent 类型持久化到数据库。
+     */
     private void streamAgentResponse(
             SseEmitter emitter,
             SendMessageRequest request,
@@ -212,6 +234,7 @@ public class ChatServiceImpl implements ChatService {
             int agentSequenceNo
     ) {
         long startedAt = System.currentTimeMillis();
+        // 用于拼接增量文本片段，最终得到完整回答。
         StringBuilder answerBuilder = new StringBuilder();
         String[] agentUsedHolder = new String[]{"router"};
 
@@ -228,6 +251,7 @@ public class ChatServiceImpl implements ChatService {
                 throw new IllegalStateException("Agent stream completed without answer content");
             }
 
+            // 流结束后一次性持久化 Agent 回复消息到数据库。
             ChatMessageEntity agentMessage = buildAgentMessage(
                     session,
                     agentSequenceNo,
@@ -236,6 +260,7 @@ public class ChatServiceImpl implements ChatService {
             );
             chatMessageRepository.save(agentMessage);
 
+            // 同步更新会话的当前 Agent 和最后消息时间。
             session.setCurrentAgent(agentUsedHolder[0]);
             session.setSessionStatus("ACTIVE");
             session.setLastMessageAt(LocalDateTime.now());
@@ -270,6 +295,13 @@ public class ChatServiceImpl implements ChatService {
         }
     }
 
+    /**
+     * 处理单个 SSE 事件，将内容追加到 answerBuilder 并转发给前端。
+     * <ul>
+     *   <li>{@code chunk} 事件：追加 {@code data.content} 的增量片段。</li>
+     *   <li>{@code done}  事件：用 {@code data.answer} 替换整个 answerBuilder（权威最终答案）。</li>
+     * </ul>
+     */
     private void handleAgentStreamEvent(
             SseEmitter emitter,
             AgentStreamEvent event,
@@ -278,12 +310,15 @@ public class ChatServiceImpl implements ChatService {
     ) {
         try {
             JsonNode data = event.getData();
+            // 记录 agent_used 字段，流结束后用于持久化消息的 agentType。
             if (data != null && data.hasNonNull("agent_used")) {
                 agentUsedHolder[0] = data.get("agent_used").asText();
             }
+            // chunk 事件：追加增量内容片段。
             if ("chunk".equals(event.getEvent()) && data != null && data.hasNonNull("content")) {
                 answerBuilder.append(data.get("content").asText());
             }
+            // done 事件：data.answer 是 FastAPI 侧的完整最终回答，直接替换。
             if ("done".equals(event.getEvent()) && data != null && data.hasNonNull("answer")) {
                 answerBuilder.setLength(0);
                 answerBuilder.append(data.get("answer").asText());
