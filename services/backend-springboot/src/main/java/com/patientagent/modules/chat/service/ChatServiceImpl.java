@@ -5,6 +5,9 @@ import com.patientagent.client.agent.AgentClient;
 import com.patientagent.client.agent.dto.AgentStreamEvent;
 import com.patientagent.modules.chat.dto.ChatHistoryResponse;
 import com.patientagent.modules.chat.dto.ChatMessageItemResponse;
+import com.patientagent.modules.chat.dto.ChatSessionItemResponse;
+import com.patientagent.modules.chat.dto.ChatSessionListResponse;
+import com.patientagent.modules.chat.dto.CreateSessionRequest;
 import com.patientagent.modules.chat.dto.SendMessageRequest;
 import com.patientagent.modules.chat.dto.SendMessageResponse;
 import com.patientagent.modules.chat.entity.ChatMessageEntity;
@@ -327,6 +330,56 @@ public class ChatServiceImpl implements ChatService {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to forward stream event", ex);
         }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ChatSessionListResponse listSessions(Long userId, int page, int pageSize) {
+        int safePage     = Math.max(page, 1);
+        int safePageSize = Math.min(Math.max(pageSize, 1), 100);
+
+        Page<ChatSessionEntity> sessionPage = chatSessionRepository
+                .findByUserIdAndIsDeletedOrderByLastMessageAtDesc(
+                        userId, 0, PageRequest.of(safePage - 1, safePageSize));
+
+        List<ChatSessionItemResponse> items = sessionPage.getContent().stream()
+                .map(this::toSessionItem)
+                .collect(Collectors.toList());
+
+        ChatSessionListResponse response = new ChatSessionListResponse();
+        response.setPage(safePage);
+        response.setPageSize(safePageSize);
+        response.setTotal(sessionPage.getTotalElements());
+        response.setItems(items);
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public ChatSessionItemResponse createSession(CreateSessionRequest request) {
+        ChatSessionEntity session = new ChatSessionEntity();
+        session.setSessionNo(generateSessionNo());
+        session.setUserId(request.getUserId());
+        session.setTitle(request.getTitle() == null || request.getTitle().isBlank()
+                ? "新对话" : request.getTitle());
+        session.setSceneType(request.getSceneType() == null || request.getSceneType().isBlank()
+                ? "mixed" : request.getSceneType());
+        session.setCurrentAgent("router");
+        session = chatSessionRepository.save(session);
+        return toSessionItem(session);
+    }
+
+    private ChatSessionItemResponse toSessionItem(ChatSessionEntity session) {
+        ChatSessionItemResponse item = new ChatSessionItemResponse();
+        item.setSessionNo(session.getSessionNo());
+        item.setTitle(session.getTitle());
+        item.setSceneType(session.getSceneType());
+        item.setSessionStatus(session.getSessionStatus());
+        item.setLastMessageAt(session.getLastMessageAt() == null ? null
+                : session.getLastMessageAt().format(TS_FMT));
+        item.setCreatedAt(session.getCreatedAt() == null ? null
+                : session.getCreatedAt().format(TS_FMT));
+        return item;
     }
 
     private String generateSessionNo() {
