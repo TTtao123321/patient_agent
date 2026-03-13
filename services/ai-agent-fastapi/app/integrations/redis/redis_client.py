@@ -7,6 +7,7 @@ _redis_client: redis.Redis | None = None
 
 
 def get_redis_client() -> redis.Redis:
+    """获取（或初始化）Redis 客户端单例。"""
     global _redis_client
     if _redis_client is None:
         _redis_client = redis.Redis(

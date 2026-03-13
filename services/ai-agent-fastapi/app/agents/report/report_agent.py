@@ -5,19 +5,17 @@ from app.services.report.report_structured_parser import ReportStructuredParser
 
 
 class ReportAgent(BaseAgent):
-    """Agent for handling medical report analysis queries."""
+    """报告解读 Agent。
+
+    先通过工具读取报告，再用结构化解析器输出标准 JSON。
+    """
 
     def __init__(self) -> None:
         super().__init__()
         self.parser = ReportStructuredParser()
     
     def handle(self, query: str) -> str:
-        """
-        Handle medical report analysis query and return structured JSON.
-        
-        The result includes extracted indicators, abnormality judgement,
-        medical explanations, and raw report context.
-        """
+        """处理报告分析请求并返回结构化 JSON 字符串。"""
         result = self.call_tool("get_medical_report", user_id=1, limit=3)
         reports = []
         if result["success"] and result["data"]:

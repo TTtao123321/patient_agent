@@ -1,25 +1,16 @@
-"""Agent for handling medical record queries."""
+"""病历查询 Agent。"""
 
 from app.agents.base.base_agent import BaseAgent
 
 
 class RecordQueryAgent(BaseAgent):
-    """Agent for handling medical record queries.
-    
-    Handles queries about patient's medical history, past diagnoses, 
-    previous treatments, and medical background.
-    """
+    """处理用户病历/既往史相关问题。"""
     
     def handle(self, query: str) -> str:
-        """
-        Handle medical record query.
-        
-        Retrieves and summarizes patient's medical history and records.
-        """
+        """查询并摘要历史病历信息。"""
         response = "[Record Query Agent] "
         
-        # Try to get medical records to provide medical history
-        # In a real scenario, we would extract user_id from context
+        # 通过工具读取病历（当前用示例 user_id，后续可从上下文透传）。
         result = self.call_tool("get_medical_record", user_id=1, limit=5)
         
         if result["success"] and result["data"]:

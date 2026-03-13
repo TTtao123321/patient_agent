@@ -11,6 +11,12 @@ from app.services.chat.chat_processor import ChatProcessor
 
 
 class ChatTaskConsumer:
+    """RabbitMQ 聊天任务消费者。
+
+    消费 `chat.task.queue` 中的异步任务，调用 ChatProcessor 生成回答，
+    再将 Agent 消息写回 MySQL 聊天表。
+    """
+
     def __init__(self) -> None:
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
@@ -19,6 +25,7 @@ class ChatTaskConsumer:
         self.processor = ChatProcessor()
 
     def start(self) -> None:
+        """启动消费者线程（幂等）。"""
         if not settings.rabbitmq_consumer_enabled:
             return
         if self._thread and self._thread.is_alive():
@@ -28,6 +35,7 @@ class ChatTaskConsumer:
         self._thread.start()
 
     def stop(self) -> None:
+        """停止消费并关闭连接。"""
         self._stop_event.set()
         try:
             if self._channel and self._channel.is_open:
@@ -43,6 +51,7 @@ class ChatTaskConsumer:
             self._thread.join(timeout=5)
 
     def _consume_loop(self) -> None:
+        """消费主循环：异常自动重连，避免线程退出。"""
         while not self._stop_event.is_set():
             try:
                 self._open_connection()
@@ -59,6 +68,7 @@ class ChatTaskConsumer:
                     time.sleep(3)
 
     def _open_connection(self) -> None:
+        """建立 RabbitMQ 连接并声明任务队列。"""
         credentials = pika.PlainCredentials(settings.rabbitmq_username, settings.rabbitmq_password)
         parameters = pika.ConnectionParameters(
             host=settings.rabbitmq_host,
@@ -72,6 +82,7 @@ class ChatTaskConsumer:
         self._channel.queue_declare(queue=settings.rabbitmq_chat_task_queue, durable=True)
 
     def _close_connection(self) -> None:
+        """关闭 channel/connection 并清空本地引用。"""
         try:
             if self._channel and self._channel.is_open:
                 self._channel.close()
@@ -86,6 +97,10 @@ class ChatTaskConsumer:
         self._connection = None
 
     def _handle_message(self, channel, method, properties, body: bytes) -> None:
+        """处理单条任务消息。
+
+        业务失败时会写入一条系统错误消息到会话中，避免前端长时间无反馈。
+        """
         try:
             payload = json.loads(body.decode("utf-8"))
             session_id = payload["session_id"]
@@ -118,6 +133,7 @@ class ChatTaskConsumer:
             channel.basic_ack(delivery_tag=method.delivery_tag)
 
     def _save_agent_message(self, session_id: str, user_id: int, content: str, agent_used: str) -> None:
+        """保存 Agent 正常回复。"""
         self._save_chat_message(
             session_id=session_id,
             user_id=user_id,
@@ -127,6 +143,7 @@ class ChatTaskConsumer:
         )
 
     def _save_error_message(self, session_id: str, user_id: int, error_message: str) -> None:
+        """保存系统错误提示消息。"""
         if not session_id or user_id <= 0:
             return
         self._save_chat_message(
@@ -138,6 +155,7 @@ class ChatTaskConsumer:
         )
 
     def _save_chat_message(self, session_id: str, user_id: int, content: str, agent_type: str, session_status: str) -> None:
+        """写入 chat_message，并同步更新 chat_session 状态。"""
         conn = get_mysql_connection()
         try:
             cursor = conn.cursor(dictionary=True)
@@ -201,6 +219,7 @@ class ChatTaskConsumer:
             conn.close()
 
     def _generate_message_no(self) -> str:
+        """生成消息编号（M + 31位十六进制）。"""
         return "M" + uuid.uuid4().hex[:31]
 
 

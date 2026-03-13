@@ -1,12 +1,15 @@
-"""Intent classifier using LLM for accurate intent recognition."""
+"""意图识别器。
+
+优先关键词快速分类，必要时回退到 LLM 提升复杂场景识别准确性。
+"""
 
 from app.llm.llm_client import get_llm_client
 
 
 class IntentClassifier:
-    """Classify user queries into specific intents using LLM."""
+    """将用户问题分类到既定医疗意图。"""
     
-    # Fallback keywords for quick classification if LLM is unavailable
+    # LLM 不可用时的兜底关键词集合。
     SYMPTOM_KEYWORDS = {
         "症状", "不舒服", "疼痛", "痛", 
         "发烧", "发热", "咳嗽", "腹痛", "头痛", "喉咙", "咽痛", "鼻塞", "流鼻涕",
@@ -51,83 +54,69 @@ User query: "{query}"
 Respond with ONLY the intent name (one of: symptom_consult, report_analysis, record_query, medical_knowledge). No other text."""
 
     def __init__(self):
-        """Initialize intent classifier."""
+        """初始化意图分类器。"""
         self.llm_client = get_llm_client()
 
     def classify(self, query: str) -> str:
-        """
-        Classify query intent using LLM with fallback to keywords.
-        
-        Args:
-            query: User query
-        
-        Returns:
-            Intent classification (symptom_consult, report_analysis, medical_knowledge, record_query)
+        """识别问题意图。
+
+        策略：先做关键词分类（快且稳定），仅在不确定时调用 LLM。
         """
         if not query or not query.strip():
             return "medical_knowledge"
 
-        # Try keyword-based classification first for speed and reliability
+        # 先走关键词分类，保证响应速度和稳定性。
         keyword_intent = self._classify_by_keywords(query)
         
-        # If keyword classification is confident, use it
+        # 关键词结果已明确时，直接返回。
         if keyword_intent != "medical_knowledge":
             return keyword_intent
         
         try:
-            # Use LLM for more nuanced classification or when keywords are uncertain
+            # 关键词不明显时，调用 LLM 进行细粒度判别。
             prompt = self.INTENT_SYSTEM_PROMPT.format(query=query.strip())
             response = self.llm_client.invoke(prompt).strip().lower()
             
-            # Validate and extract intent from response
+            # 从 LLM 输出中抽取合法意图。
             valid_intents = {"symptom_consult", "report_analysis", "medical_knowledge", "record_query"}
             
-            # Look for exact intent match in response
+            # 允许模型输出包含额外内容，只要命中合法意图即可。
             for intent in valid_intents:
                 if intent in response:
                     return intent
             
-            # If LLM response doesn't contain a valid intent, fall back to keywords
+            # 模型结果不规范时回退关键词结果。
             return keyword_intent
         except Exception as e:
-            # Fallback to keyword-based classification if LLM fails
+            # LLM 调用异常时兜底，保证流程不中断。
             print(f"LLM classification failed: {e}, falling back to keywords")
             return keyword_intent
 
     def _classify_by_keywords(self, query: str) -> str:
-        """
-        Keyword-based intent classification for reliable baseline.
-        
-        Args:
-            query: User query
-        
-        Returns:
-            Intent classification
-        """
+        """关键词意图分类（基线规则）。"""
         text = (query or "").strip().lower()
         
-        # Check keywords in order of priority (more specific first)
-        # Priority 1: Record keywords for history/past queries
+        # 按优先级依次匹配，避免类别歧义。
+        # 1) 病历查询
         if any(word in text for word in self.RECORD_KEYWORDS):
             return "record_query"
         
-        # Priority 2: Report keywords for test results
+        # 2) 报告解读
         if any(word in text for word in self.REPORT_KEYWORDS):
             return "report_analysis"
         
-        # Priority 3: Knowledge keywords often accompany symptoms - need differentiation
-        # If query has "怎样", "怎么", "如何", "治疗" without symptom keywords, it's medical knowledge
+        # 3) 常见问法词需与症状词区分，避免把症状咨询误判为知识问答。
         has_knowledge_kw = any(word in text for word in {"怎样", "怎么", "如何", "治疗", "建议"})
         has_symptom_kw = any(word in text for word in self.SYMPTOM_KEYWORDS)
         
         if has_knowledge_kw and not has_symptom_kw:
             return "medical_knowledge"
 
-        # Priority 4: Symptom keywords
+        # 4) 症状咨询
         if any(word in text for word in self.SYMPTOM_KEYWORDS):
             return "symptom_consult"
         
-        # Priority 5: General knowledge keywords
+        # 5) 医学常识
         if any(word in text for word in self.KNOWLEDGE_KEYWORDS):
             return "medical_knowledge"
 

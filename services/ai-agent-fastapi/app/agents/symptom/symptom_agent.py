@@ -3,19 +3,14 @@ from app.tools.executor.tool_executor import ToolCall
 
 
 class SymptomAgent(BaseAgent):
-    """Agent for handling symptom consultation queries."""
+    """症状咨询 Agent。"""
     
     def handle(self, query: str) -> str:
-        """
-        Handle symptom consultation query.
-        
-        May call medical record and drug search tools to gather information.
-        """
-        # For symptom consultation, try to get recent medical records and search for relevant drugs
+        """处理症状类问题，结合病历与药物信息给出初步建议。"""
+        # 症状咨询场景：先结合近期病历，再补充药物参考信息。
         response = "[Symptom Agent] "
         
-        # Try to get medical records to understand patient history
-        # In a real scenario, we would extract user_id from context
+        # 先读取病历用于上下文补充（当前使用示例 user_id）。
         result = self.call_tool("get_medical_record", user_id=1, limit=2)
         if result["success"] and result["data"]:
             records = result["data"].get("records", [])
@@ -23,7 +18,7 @@ class SymptomAgent(BaseAgent):
                 recent_record = records[0]
                 response += f"Based on your medical history (最近病历: {recent_record.get('chief_complaint')}), "
         
-        # Extract potential drugs from query to search
+        # 提取问题中提及的药名并查询说明。
         drug_keywords = ["阿莫西林", "氨溴索", "布洛芬"]
         mentioned_drugs = [drug for drug in drug_keywords if drug in query]
         if mentioned_drugs:

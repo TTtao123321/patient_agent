@@ -10,6 +10,12 @@ from app.schemas.report.structured_report import (
 
 
 class ReportStructuredParser:
+    """报告结构化解析器。
+
+    目标：从用户问题和原始报告文本中抽取指标、影像发现，
+    并输出统一 StructuredReportDto，便于前后端稳定对接。
+    """
+
     INDICATOR_RULES = {
         "白细胞": {
             "aliases": ["白细胞", "WBC", "白血球"],
@@ -97,6 +103,7 @@ class ReportStructuredParser:
     IMAGING_KEYWORDS = ["磨玻璃影", "结节", "占位", "积液", "肿块", "斑片影"]
 
     def parse(self, query: str, reports: list[dict[str, Any]] | None = None) -> StructuredReportDto:
+        """解析入口：综合 query + 报告列表，输出结构化结果。"""
         reports = reports or []
         selected_reports = self._select_relevant_reports(query=query, reports=reports)
         source_text = self._build_source_text(query=query, reports=selected_reports)
@@ -127,6 +134,7 @@ class ReportStructuredParser:
         )
 
     def _build_source_text(self, query: str, reports: list[dict[str, Any]]) -> str:
+        """拼接用于解析的源文本（问题 + 报告正文 + 摘要）。"""
         parts = [query]
         for report in reports:
             raw_text = report.get("raw_text")
@@ -138,6 +146,7 @@ class ReportStructuredParser:
         return "\n".join(part for part in parts if part)
 
     def _select_relevant_reports(self, query: str, reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """按推断报告类型优先筛选相关报告。"""
         inferred_type = self._infer_report_type(query=query, reports=[])
         if inferred_type == "laboratory":
             filtered_reports = [report for report in reports if report.get("report_type") == "blood"]
@@ -148,6 +157,7 @@ class ReportStructuredParser:
         return reports
 
     def _parse_indicators(self, text: str) -> list[IndicatorDto]:
+        """从文本中抽取检验指标并做异常判定。"""
         indicators: list[IndicatorDto] = []
         seen_names: set[str] = set()
 
@@ -178,6 +188,7 @@ class ReportStructuredParser:
         return indicators
 
     def _parse_imaging_findings(self, text: str) -> list[FindingDto]:
+        """从文本中抽取影像学阳性发现。"""
         findings: list[FindingDto] = []
         normalized_text = text.replace("；", "。")
         for sentence in re.split(r"[。\n]", normalized_text):
@@ -244,6 +255,7 @@ class ReportStructuredParser:
         return f"{name}已识别，但暂时无法判断是否超出参考范围。"
 
     def _infer_report_type(self, query: str, reports: list[dict[str, Any]]) -> str:
+        """推断报告大类（laboratory/imaging/general）。"""
         text = " ".join([query, *[str(report.get("report_title", "")) for report in reports]]).lower()
         if "ct" in text or "肺" in text or "影像" in text:
             return "imaging"
@@ -252,6 +264,7 @@ class ReportStructuredParser:
         return "general"
 
     def _summarize_status(self, indicators: list[IndicatorDto], findings: list[FindingDto]) -> str:
+        """汇总整体状态。"""
         abnormal_count = sum(1 for indicator in indicators if indicator.status in {"high", "low"})
         if abnormal_count >= 2 or findings:
             return "abnormal"
@@ -262,6 +275,7 @@ class ReportStructuredParser:
         return "insufficient_data"
 
     def _build_medical_advice(self, indicators: list[IndicatorDto], findings: list[FindingDto]) -> list[str]:
+        """生成面向患者的建议文案（含安全免责声明）。"""
         advice: list[str] = []
         abnormal_indicators = [indicator for indicator in indicators if indicator.status in {"high", "low"}]
 

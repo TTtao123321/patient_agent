@@ -1,4 +1,7 @@
-"""LLM Client for intent recognition and other LLM-based tasks."""
+"""LLM 客户端封装。
+
+统一提供 invoke/stream 两种调用方式，并以单例形式复用底层模型连接。
+"""
 
 from collections.abc import Iterator
 
@@ -7,7 +10,7 @@ from app.core.settings import settings
 
 
 class LLMClient:
-    """Singleton client for LLM operations."""
+    """LLM 调用单例客户端。"""
     
     _instance = None
     _llm = None
@@ -18,40 +21,25 @@ class LLMClient:
         return cls._instance
     
     def __init__(self):
-        """Initialize LLM client."""
+        """初始化底层 Ollama 模型实例。"""
         if self._llm is None:
             self._llm = OllamaLLM(
                 base_url=settings.ollama_base_url,
                 model=settings.ollama_model,
-                temperature=0.3,  # Lower temperature for more consistent intent classification
+                # 低温度让输出更稳定，适合意图识别等结构化任务。
+                temperature=0.3,
             )
     
     def get_llm(self) -> OllamaLLM:
-        """Get LLM instance."""
+        """返回底层 LLM 对象。"""
         return self._llm
     
     def invoke(self, prompt: str) -> str:
-        """
-        Invoke LLM with given prompt.
-        
-        Args:
-            prompt: Input prompt for LLM
-        
-        Returns:
-            LLM response
-        """
+        """同步调用 LLM 并返回完整文本。"""
         return self._llm.invoke(prompt)
 
     def stream(self, prompt: str) -> Iterator[str]:
-        """
-        Stream LLM response chunks for the given prompt.
-
-        Args:
-            prompt: Input prompt for LLM
-
-        Returns:
-            Iterator of incremental text chunks
-        """
+        """流式调用 LLM，产出增量文本块。"""
         for chunk in self._llm.stream(prompt):
             if chunk is None:
                 continue
@@ -71,5 +59,5 @@ class LLMClient:
 
 
 def get_llm_client() -> LLMClient:
-    """Get or create LLM client instance."""
+    """获取全局 LLMClient 单例。"""
     return LLMClient()

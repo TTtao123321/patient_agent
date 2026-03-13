@@ -12,6 +12,7 @@ from app.observability.tracing.request_tracing_middleware import RequestTracingM
 configure_logging()
 
 app = FastAPI(title="Patient Agent AI Service", version="0.1.0")
+# 全局请求追踪中间件：注入 request_id、记录请求指标。
 app.add_middleware(RequestTracingMiddleware)
 
 app.include_router(agent_router)
@@ -21,24 +22,29 @@ app.include_router(tool_router)
 
 @app.on_event("startup")
 def on_startup() -> None:
+    # 启动 RabbitMQ 消费线程，处理异步 AI 任务。
     chat_task_consumer.start()
 
 
 @app.on_event("shutdown")
 def on_shutdown() -> None:
+    # 优雅停止消费者线程和连接。
     chat_task_consumer.stop()
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    """健康检查接口。"""
     return {"status": "ok"}
 
 
 @app.get("/metrics")
 def metrics() -> dict:
+    """JSON 格式监控快照。"""
     return metrics_registry.snapshot()
 
 
 @app.get("/metrics/prometheus", response_class=PlainTextResponse)
 def metrics_prometheus() -> str:
+    """Prometheus 文本格式监控指标。"""
     return metrics_registry.to_prometheus_text()

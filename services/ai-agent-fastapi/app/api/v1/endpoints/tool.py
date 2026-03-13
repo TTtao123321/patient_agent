@@ -1,4 +1,4 @@
-"""Tool calling API endpoints."""
+"""工具调用相关 API 端点。"""
 from fastapi import APIRouter
 from app.tools.executor.tool_executor import ToolExecutor
 from app.schemas.http.tool_call import (
@@ -17,7 +17,7 @@ executor = ToolExecutor()
 
 @router.get("/available", response_model=AvailableToolsResponse)
 def list_available_tools() -> AvailableToolsResponse:
-    """List all available tools."""
+    """列出当前可用工具及其参数定义。"""
     tools_data = executor.get_available_tools()
     tools = [
         ToolDefinitionSchema(
@@ -35,7 +35,7 @@ def list_available_tools() -> AvailableToolsResponse:
 
 @router.post("/execute", response_model=ExecuteToolResponse)
 def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
-    """Execute a single tool."""
+    """执行单个工具。"""
     result = executor.execute_tool(request.tool_name, **request.parameters)
     return ExecuteToolResponse(
         result=ToolExecutionResult(
@@ -49,7 +49,8 @@ def execute_tool(request: ExecuteToolRequest) -> ExecuteToolResponse:
 
 @router.post("/batch", response_model=BatchExecuteToolsResponse)
 def batch_execute_tools(request: BatchExecuteToolsRequest) -> BatchExecuteToolsResponse:
-    """Execute multiple tools in batch."""
+    """批量执行多个工具。"""
+    # 延迟导入，避免模块初始化时的循环依赖风险。
     from app.tools.executor.tool_executor import ToolCall
     
     calls = [

@@ -11,26 +11,24 @@ logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
-    """Base class for all agents with tool calling capability."""
+    """所有 Agent 的抽象基类。
+
+    该类统一封装工具调用能力（单工具、多工具、工具列表），
+    具体业务 Agent 只需关注 `handle` 的业务逻辑实现。
+    """
     
     def __init__(self) -> None:
         self.tool_executor = ToolExecutor()
     
     @abstractmethod
     def handle(self, query: str) -> str:
-        """Handle query and return response."""
+        """处理用户问题并返回文本结果。"""
         raise NotImplementedError
     
     def call_tool(self, tool_name: str, **parameters) -> dict[str, Any]:
-        """
-        Call a tool and return result.
-        
-        Args:
-            tool_name: Name of the tool to call
-            **parameters: Tool parameters
-        
-        Returns:
-            Tool execution result
+        """调用单个工具并返回统一结果结构。
+
+        同时记录工具调用指标与日志，并在超时阈值时输出慢调用告警。
         """
         started_at = time.perf_counter()
         result = self.tool_executor.execute_tool(tool_name, **parameters)
@@ -57,15 +55,7 @@ class BaseAgent(ABC):
         }
     
     def call_tools(self, calls: list[ToolCall]) -> dict[str, Any]:
-        """
-        Call multiple tools.
-        
-        Args:
-            calls: List of tool calls
-        
-        Returns:
-            All tool execution results
-        """
+        """批量调用多个工具并汇总结果。"""
         response = self.tool_executor.execute_tools(calls)
         return {
             "results": [r.model_dump() for r in response.results],
@@ -74,5 +64,5 @@ class BaseAgent(ABC):
         }
     
     def get_available_tools(self) -> list[dict[str, Any]]:
-        """Get list of available tools."""
+        """获取当前已注册的工具清单。"""
         return self.tool_executor.get_available_tools()

@@ -8,6 +8,12 @@ from app.integrations.redis.redis_client import get_redis_client
 
 
 class ChatMemoryStore:
+    """聊天记忆存储层。
+
+    - Redis: 保存短期上下文（高频、低延迟、TTL）。
+    - MySQL: 保存长期历史（可追溯、可查询）。
+    """
+
     def __init__(self) -> None:
         self.redis_prefix = settings.redis_chat_key_prefix
         self.redis_ttl = settings.redis_chat_ttl_seconds
@@ -15,9 +21,11 @@ class ChatMemoryStore:
         self._ensure_mysql_table()
 
     def _redis_key(self, session_id: str) -> str:
+        """生成会话对应的 Redis 列表 Key。"""
         return f"{self.redis_prefix}:{session_id}:messages"
 
     def _ensure_mysql_table(self) -> None:
+        """确保历史消息表存在（幂等）。"""
         create_sql = """
         CREATE TABLE IF NOT EXISTS agent_chat_history (
             id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -39,10 +47,11 @@ class ChatMemoryStore:
             cursor.close()
             conn.close()
         except Exception:
-            # MySQL is optional at runtime; failures should not block chatting.
+            # MySQL 在运行期可降级；建表失败不应阻断主流程。
             pass
 
     def append_short_term_message(self, session_id: str, user_id: int, role: str, content: str) -> None:
+        """追加一条短期消息到 Redis。"""
         payload = {
             "session_id": session_id,
             "user_id": user_id,
@@ -60,6 +69,7 @@ class ChatMemoryStore:
             pass
 
     def get_short_term_messages(self, session_id: str, limit: int) -> list[dict[str, Any]]:
+        """读取最近 N 条短期消息。"""
         key = self._redis_key(session_id)
         try:
             redis_client = get_redis_client()
@@ -77,6 +87,7 @@ class ChatMemoryStore:
         intent: str | None = None,
         agent_used: str | None = None,
     ) -> None:
+        """写入长期历史消息到 MySQL。"""
         insert_sql = """
         INSERT INTO agent_chat_history (session_id, user_id, role, content, intent, agent_used)
         VALUES (%s, %s, %s, %s, %s, %s)
@@ -91,6 +102,7 @@ class ChatMemoryStore:
             pass
 
     def get_history_messages(self, session_id: str, limit: int) -> list[dict[str, Any]]:
+        """读取会话历史消息（按时间升序返回）。"""
         query_sql = """
         SELECT session_id, user_id, role, content, intent, agent_used, created_at
         FROM agent_chat_history

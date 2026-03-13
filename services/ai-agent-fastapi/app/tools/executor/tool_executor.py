@@ -1,17 +1,17 @@
-"""Tool calling executor."""
+"""工具调用执行器。"""
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 from app.tools.registry.tool_registry import get_tool_registry
 
 
 class ToolCall(BaseModel):
-    """A single tool call request."""
+    """单次工具调用请求。"""
     tool_name: str = Field(..., description="工具名称")
     parameters: dict[str, Any] = Field(default_factory=dict, description="工具参数")
 
 
 class ToolCallResult(BaseModel):
-    """Result of a tool call."""
+    """单次工具调用结果。"""
     tool_name: str = Field(..., description="工具名称")
     success: bool = Field(..., description="是否执行成功")
     data: Optional[Any] = Field(None, description="执行结果数据")
@@ -19,34 +19,25 @@ class ToolCallResult(BaseModel):
 
 
 class ToolCallRequest(BaseModel):
-    """Request containing multiple tool calls."""
+    """批量工具调用请求。"""
     calls: list[ToolCall] = Field(..., description="工具调用列表")
 
 
 class ToolCallResponse(BaseModel):
-    """Response containing tool call results."""
+    """批量工具调用响应。"""
     results: list[ToolCallResult] = Field(..., description="工具执行结果列表")
     total_calls: int = Field(..., description="总调用数")
     successful_calls: int = Field(..., description="成功调用数")
 
 
 class ToolExecutor:
-    """Executor for tool calling."""
+    """工具执行入口。"""
     
     def __init__(self) -> None:
         self.registry = get_tool_registry()
     
     def execute_tool(self, tool_name: str, **parameters) -> ToolCallResult:
-        """
-        Execute a single tool.
-        
-        Args:
-            tool_name: Name of the tool to execute
-            **parameters: Tool parameters
-        
-        Returns:
-            ToolCallResult with execution result
-        """
+        """执行单个工具。"""
         tool = self.registry.get_tool(tool_name)
         if not tool:
             return ToolCallResult(
@@ -71,15 +62,7 @@ class ToolExecutor:
             )
     
     def execute_tools(self, calls: list[ToolCall]) -> ToolCallResponse:
-        """
-        Execute multiple tools.
-        
-        Args:
-            calls: List of tool calls
-        
-        Returns:
-            ToolCallResponse with all results
-        """
+        """批量执行多个工具。"""
         results = []
         successful = 0
         
@@ -96,7 +79,7 @@ class ToolExecutor:
         )
     
     def get_available_tools(self) -> list[dict[str, Any]]:
-        """Get list of available tools."""
+        """获取可用工具列表。"""
         tools = self.registry.list_tools()
         return [
             {

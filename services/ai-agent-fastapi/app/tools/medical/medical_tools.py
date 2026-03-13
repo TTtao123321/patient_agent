@@ -1,10 +1,10 @@
-"""Medical tools implementation."""
+"""医疗工具实现集合。"""
 from typing import Any
 from app.tools.base_tool import BaseTool, ToolParameter
 
 
 class GetMedicalReportTool(BaseTool):
-    """Tool to retrieve medical reports."""
+    """获取医疗报告工具。"""
     
     @property
     def name(self) -> str:
@@ -38,17 +38,7 @@ class GetMedicalReportTool(BaseTool):
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """
-        Execute get_medical_report tool.
-        
-        Args:
-            user_id: User ID
-            report_type: Optional report type filter
-            limit: Optional limit for number of reports
-        
-        Returns:
-            Dictionary with reports data or error
-        """
+        """执行报告查询。"""
         try:
             user_id = kwargs.get("user_id")
             report_type = kwargs.get("report_type")
@@ -60,7 +50,7 @@ class GetMedicalReportTool(BaseTool):
                     "error": "缺少必需参数: user_id",
                 }
             
-            # Mock data - In production, this would call Java backend API
+            # 当前为 Mock 数据；生产环境可替换为 Java 后端 API 调用。
             mock_reports = [
                 {
                     "report_no": "RPT20260310001",
@@ -108,11 +98,11 @@ class GetMedicalReportTool(BaseTool):
                 },
             ]
             
-            # Filter by report type if specified
+            # 按报告类型筛选。
             if report_type:
                 mock_reports = [r for r in mock_reports if r["report_type"] == report_type]
             
-            # Apply limit
+            # 截断返回数量。
             mock_reports = mock_reports[:limit]
             
             return {
@@ -131,7 +121,7 @@ class GetMedicalReportTool(BaseTool):
 
 
 class GetMedicalRecordTool(BaseTool):
-    """Tool to retrieve medical records."""
+    """获取病历工具。"""
     
     @property
     def name(self) -> str:
@@ -159,16 +149,7 @@ class GetMedicalRecordTool(BaseTool):
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """
-        Execute get_medical_record tool.
-        
-        Args:
-            user_id: User ID
-            limit: Optional limit for number of records
-        
-        Returns:
-            Dictionary with medical records or error
-        """
+        """执行病历查询。"""
         try:
             user_id = kwargs.get("user_id")
             limit = kwargs.get("limit", 3)
@@ -179,7 +160,7 @@ class GetMedicalRecordTool(BaseTool):
                     "error": "缺少必需参数: user_id",
                 }
             
-            # Mock data - In production, this would call Java backend API
+            # 当前为 Mock 数据；生产环境可替换为 Java 后端 API 调用。
             mock_records = [
                 {
                     "record_no": "MR20260310001",
@@ -205,7 +186,7 @@ class GetMedicalRecordTool(BaseTool):
                 },
             ]
             
-            # Apply limit
+            # 截断返回数量。
             mock_records = mock_records[:limit]
             
             return {
@@ -224,7 +205,7 @@ class GetMedicalRecordTool(BaseTool):
 
 
 class SearchDrugTool(BaseTool):
-    """Tool to search for drug information."""
+    """药物检索工具。"""
     
     @property
     def name(self) -> str:
@@ -252,16 +233,7 @@ class SearchDrugTool(BaseTool):
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """
-        Execute search_drug tool.
-        
-        Args:
-            drug_name: Drug name to search
-            limit: Optional limit for number of results
-        
-        Returns:
-            Dictionary with drug information or error
-        """
+        """执行药物查询。"""
         try:
             drug_name = kwargs.get("drug_name", "").strip()
             limit = kwargs.get("limit", 3)
@@ -272,7 +244,7 @@ class SearchDrugTool(BaseTool):
                     "error": "缺少必需参数: drug_name",
                 }
             
-            # Mock data - In production, this would call a drug database API
+            # 当前为 Mock 数据；生产环境可接药品数据库/API。
             drug_database = {
                 "阿莫西林": {
                     "name": "阿莫西林",
@@ -303,7 +275,7 @@ class SearchDrugTool(BaseTool):
                 },
             }
             
-            # Search for drug
+            # 执行模糊匹配检索。
             results = []
             for drug, info in drug_database.items():
                 if drug_name.lower() in drug.lower() or drug_name.lower() in info.get("generic_name", "").lower():
@@ -321,7 +293,7 @@ class SearchDrugTool(BaseTool):
                     }
                 ]
             
-            # Apply limit
+            # 截断返回数量。
             results = results[:limit]
             
             return {
@@ -340,7 +312,7 @@ class SearchDrugTool(BaseTool):
 
 
 class SearchDepartmentTool(BaseTool):
-    """Tool to search for medical departments."""
+    """科室检索工具。"""
     
     @property
     def name(self) -> str:
@@ -368,16 +340,7 @@ class SearchDepartmentTool(BaseTool):
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """
-        Execute search_department tool.
-        
-        Args:
-            department_name: Department name to search
-            limit: Optional limit for number of results
-        
-        Returns:
-            Dictionary with department information or error
-        """
+        """执行科室查询。"""
         try:
             dept_name = kwargs.get("department_name", "").strip()
             limit = kwargs.get("limit", 3)
@@ -388,7 +351,7 @@ class SearchDepartmentTool(BaseTool):
                     "error": "缺少必需参数: department_name",
                 }
             
-            # Mock data - In production, this would call a department database
+            # 当前为 Mock 数据；生产环境可接医院科室服务。
             department_database = {
                 "呼吸科": {
                     "name": "呼吸科",
@@ -420,7 +383,7 @@ class SearchDepartmentTool(BaseTool):
                 },
             }
             
-            # Search for department
+            # 执行科室名称匹配。
             results = []
             for dept, info in department_database.items():
                 if dept_name.lower() in dept.lower():
@@ -437,7 +400,7 @@ class SearchDepartmentTool(BaseTool):
                     }
                 ]
             
-            # Apply limit
+            # 截断返回数量。
             results = results[:limit]
             
             return {

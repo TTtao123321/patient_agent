@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 
 
 class RouterAgent:
-    """Router agent that classifies intents and routes to appropriate agents.
-    
-    Supports four intent types:
-    - symptom_consult: Queries about symptoms
-    - report_analysis: Queries about medical reports and test results
-    - medical_knowledge: General medical knowledge questions
-    - record_query: Queries about medical history and records
+    """Agent 路由器。
+
+    负责：
+    1) 意图识别；
+    2) 将请求分发到对应业务 Agent；
+    3) 统一记录 agent 调用指标与耗时日志。
     """
     
     def __init__(self) -> None:
@@ -31,15 +30,7 @@ class RouterAgent:
         self.record_agent = RecordQueryAgent()
 
     def route(self, query: str) -> tuple[str, str, str]:
-        """
-        Route query to appropriate agent based on intent.
-        
-        Args:
-            query: User query
-        
-        Returns:
-            Tuple of (answer, intent, agent_used)
-        """
+        """根据意图路由到对应 Agent，返回 (answer, intent, agent_used)。"""
         started_at = time.perf_counter()
         intent = self.classifier.classify(query)
         logger.info("agent_route_intent intent=%s query_len=%s", intent, len(query))
@@ -71,7 +62,7 @@ class RouterAgent:
                 started_at=started_at,
             )
 
-        # Default to knowledge agent for medical_knowledge intent
+        # medical_knowledge 和兜底场景统一由知识 Agent 处理。
         return self._execute_agent(
             handler=self.knowledge_agent.handle,
             query=query,
@@ -88,6 +79,7 @@ class RouterAgent:
         agent_name: str,
         started_at: float,
     ) -> tuple[str, str, str]:
+        """统一执行 Agent 并记录指标、日志与慢调用告警。"""
         try:
             answer = handler(query)
             latency_ms = (time.perf_counter() - started_at) * 1000

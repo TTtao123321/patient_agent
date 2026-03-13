@@ -1,4 +1,4 @@
-"""Tool calling API schemas."""
+"""工具调用 API 的请求/响应模型定义。"""
 from pydantic import BaseModel, Field
 from typing import Any, Optional
 

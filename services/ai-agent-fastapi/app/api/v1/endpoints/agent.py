@@ -14,11 +14,13 @@ chat_processor = ChatProcessor()
 
 
 def _format_sse(event_name: str, payload: dict) -> str:
+    """将事件名和数据格式化为标准 SSE 文本帧。"""
     return f"event: {event_name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 @router.post("/chat", response_model=AgentChatResponse)
 def chat(request: AgentChatRequest) -> AgentChatResponse:
+    """同步聊天接口。"""
     session_id = request.get_session_id()
     answer, intent, agent_used, used_context_messages = chat_processor.process(
         session_id=session_id,
@@ -37,9 +39,11 @@ def chat(request: AgentChatRequest) -> AgentChatResponse:
 
 @router.post("/chat/stream")
 def stream_chat(request: AgentChatRequest) -> StreamingResponse:
+    """流式聊天接口，返回 SSE 数据流。"""
     session_id = request.get_session_id()
 
     def event_generator():
+        # 将业务层产出的事件逐条转成 SSE 帧。
         for item in chat_processor.stream(
             session_id=session_id,
             user_id=request.user_id,
@@ -60,6 +64,7 @@ def stream_chat(request: AgentChatRequest) -> StreamingResponse:
 
 @router.get("/sessions/{session_id}/history", response_model=ChatHistoryResponse)
 def get_session_history(session_id: str, limit: int = 50) -> ChatHistoryResponse:
+    """按会话查询历史消息。"""
     messages = session_manager.get_history(session_id=session_id, limit=limit)
     items = [ChatHistoryItem(**item) for item in messages]
     return ChatHistoryResponse(session_id=session_id, total=len(items), messages=items)

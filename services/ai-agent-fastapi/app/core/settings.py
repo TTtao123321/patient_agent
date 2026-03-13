@@ -2,6 +2,12 @@ import os
 
 
 class Settings:
+    """应用配置集中管理。
+
+    所有配置均可通过环境变量覆盖，提供合理默认值，
+    便于本地开发和容器部署统一使用。
+    """
+
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     slow_request_threshold_ms: int = int(os.getenv("SLOW_REQUEST_THRESHOLD_MS", "1200"))
     slow_agent_call_threshold_ms: int = int(os.getenv("SLOW_AGENT_CALL_THRESHOLD_MS", "1500"))
@@ -46,6 +52,7 @@ class Settings:
 
     @property
     def milvus_uri(self) -> str:
+        """拼装 Milvus HTTP URI。"""
         return f"http://{self.milvus_host}:{self.milvus_port}"
 
 

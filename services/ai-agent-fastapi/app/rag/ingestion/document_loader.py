@@ -9,6 +9,7 @@ SUPPORTED_EXTENSIONS = {".txt", ".md", ".pdf"}
 
 
 def load_documents(input_path: str) -> list[Document]:
+    """加载文件或目录下的文档，并过滤为支持格式。"""
     path = Path(input_path)
     files: Iterable[Path]
 
@@ -32,6 +33,7 @@ def load_documents(input_path: str) -> list[Document]:
 
 
 def _load_single_file(file: Path) -> list[Document]:
+    """按文件类型选择 Loader。"""
     suffix = file.suffix.lower()
     if suffix == ".pdf":
         loader = PyPDFLoader(str(file))

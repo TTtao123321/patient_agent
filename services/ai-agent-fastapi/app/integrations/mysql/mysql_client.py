@@ -8,6 +8,7 @@ _mysql_pool: MySQLConnectionPool | None = None
 
 
 def get_mysql_pool() -> MySQLConnectionPool:
+    """获取（或初始化）MySQL 连接池单例。"""
     global _mysql_pool
     if _mysql_pool is None:
         _mysql_pool = MySQLConnectionPool(
@@ -26,5 +27,6 @@ def get_mysql_pool() -> MySQLConnectionPool:
 
 
 def get_mysql_connection() -> mysql.connector.MySQLConnection:
+    """从连接池获取一个可用 MySQL 连接。"""
     pool = get_mysql_pool()
     return pool.get_connection()

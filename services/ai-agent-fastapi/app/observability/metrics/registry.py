@@ -3,6 +3,11 @@ from threading import Lock
 
 
 class MetricsRegistry:
+    """进程内指标注册器。
+
+    负责累计 HTTP、Agent、Tool 调用计数，并支持 JSON/Prometheus 两种输出格式。
+    """
+
     def __init__(self) -> None:
         self._lock = Lock()
         self._request_total = 0
@@ -15,6 +20,7 @@ class MetricsRegistry:
         self._tool_call_failures: dict[str, int] = defaultdict(int)
 
     def record_request(self, path: str, latency_ms: float, is_error: bool) -> None:
+        """记录一次 HTTP 请求。"""
         with self._lock:
             self._request_total += 1
             self._path_counts[path] += 1
@@ -23,6 +29,7 @@ class MetricsRegistry:
                 self._error_total += 1
 
     def snapshot(self) -> dict:
+        """输出 JSON 快照，适配内部诊断接口。"""
         with self._lock:
             per_path = []
             for path, count in self._path_counts.items():
@@ -59,18 +66,21 @@ class MetricsRegistry:
             }
 
     def record_agent_call(self, agent_name: str, success: bool) -> None:
+        """记录一次 Agent 调用。"""
         with self._lock:
             self._agent_call_counts[agent_name] += 1
             if not success:
                 self._agent_call_failures[agent_name] += 1
 
     def record_tool_call(self, tool_name: str, success: bool) -> None:
+        """记录一次工具调用。"""
         with self._lock:
             self._tool_call_counts[tool_name] += 1
             if not success:
                 self._tool_call_failures[tool_name] += 1
 
     def to_prometheus_text(self) -> str:
+        """导出 Prometheus 文本格式指标。"""
         with self._lock:
             lines = [
                 "# HELP patient_agent_http_requests_total Total number of HTTP requests",

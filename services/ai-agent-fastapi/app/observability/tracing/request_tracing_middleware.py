@@ -14,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class RequestTracingMiddleware(BaseHTTPMiddleware):
+    """请求追踪中间件。
+
+    负责生成/透传 X-Request-Id、记录请求日志与指标、输出慢请求告警。
+    """
+
     async def dispatch(self, request: Request, call_next):
+        # 优先复用上游 request id，缺失则本地生成。
         request_id = request.headers.get("X-Request-Id") or request.headers.get("x-request-id")
         if not request_id:
             request_id = str(uuid.uuid4())
@@ -53,4 +59,5 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
                     settings.slow_request_threshold_ms,
                 )
             if response is not None:
+                # 将 request_id 透传回调用方，便于链路排障。
                 response.headers["X-Request-Id"] = request_id

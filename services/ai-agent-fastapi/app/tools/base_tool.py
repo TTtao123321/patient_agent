@@ -1,11 +1,11 @@
-"""Base tool class definition."""
+"""工具抽象定义。"""
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
 class ToolParameter(BaseModel):
-    """Tool parameter definition."""
+    """工具参数定义。"""
     name: str = Field(..., description="参数名")
     type: str = Field(..., description="参数类型: string, integer, float, boolean, array")
     description: str = Field(..., description="参数描述")
@@ -13,14 +13,14 @@ class ToolParameter(BaseModel):
 
 
 class ToolDefinition(BaseModel):
-    """Tool definition model."""
+    """工具元信息定义。"""
     name: str = Field(..., description="工具名称")
     description: str = Field(..., description="工具描述")
     parameters: list[ToolParameter] = Field(default_factory=list, description="参数列表")
 
 
 class BaseTool(ABC):
-    """Abstract base class for all tools."""
+    """所有工具的抽象基类。"""
     
     def __init__(self) -> None:
         pass
@@ -28,22 +28,22 @@ class BaseTool(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Tool name."""
+        """工具名称。"""
         raise NotImplementedError
     
     @property
     @abstractmethod
     def description(self) -> str:
-        """Tool description."""
+        """工具说明。"""
         raise NotImplementedError
     
     @property
     def parameters(self) -> list[ToolParameter]:
-        """Tool parameters definition."""
+        """工具参数定义。"""
         return []
     
     def get_definition(self) -> ToolDefinition:
-        """Get tool definition."""
+        """获取工具定义。"""
         return ToolDefinition(
             name=self.name,
             description=self.description,
@@ -52,10 +52,5 @@ class BaseTool(ABC):
     
     @abstractmethod
     def execute(self, **kwargs) -> dict[str, Any]:
-        """
-        Execute the tool with given parameters.
-        
-        Returns:
-            dict with 'success' and 'data' or 'error' keys
-        """
+        """执行工具并返回 `success/data/error` 结构。"""
         raise NotImplementedError

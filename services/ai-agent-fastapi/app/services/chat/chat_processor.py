@@ -11,17 +11,26 @@ logger = logging.getLogger(__name__)
 
 
 class ChatProcessor:
+    """聊天处理主流程。
+
+    - `process`：普通同步问答流程。
+    - `stream`：流式问答流程，按 SSE 事件分块返回。
+    """
+
     def __init__(self) -> None:
         self.router_agent = RouterAgent()
         self.session_manager = SessionManager()
         self.llm_client = get_llm_client()
 
     def process(self, session_id: str, user_id: int, message: str) -> tuple[str, str, str, int]:
+        """同步处理聊天请求。"""
         started_at = time.perf_counter()
+        # 构造短期上下文，提升多轮对话连贯性。
         context_text = self.session_manager.build_context_text(session_id=session_id)
         context_messages = self.session_manager.get_context_messages(session_id=session_id)
         query_with_context = message if not context_text else f"{context_text}\n当前问题: {message}"
 
+        # 先持久化用户消息，再路由执行 Agent。
         self.session_manager.save_user_message(session_id=session_id, user_id=user_id, content=message)
 
         answer, intent, agent_used = self.router_agent.route(query_with_context)
@@ -43,6 +52,7 @@ class ChatProcessor:
         return answer, intent, agent_used, len(context_messages)
 
     def stream(self, session_id: str, user_id: int, message: str) -> Iterator[dict]:
+        """流式处理聊天请求，按 start/chunk/done 事件输出。"""
         started_at = time.perf_counter()
         context_text = self.session_manager.build_context_text(session_id=session_id)
         context_messages = self.session_manager.get_context_messages(session_id=session_id)
@@ -72,6 +82,7 @@ class ChatProcessor:
         )
 
         chunks: list[str] = []
+        # 报告结构化结果（JSON）不再经 LLM 润色，避免破坏结构。
         if self._should_bypass_stream_llm(intent=intent, draft_answer=draft_answer):
             final_answer = draft_answer
             for segment in self._segment_text(final_answer):
@@ -84,6 +95,7 @@ class ChatProcessor:
                 }
         else:
             try:
+                # 常规场景：对草稿做流式润色输出。
                 for chunk in self.llm_client.stream(prompt):
                     if not chunk:
                         continue
@@ -96,6 +108,7 @@ class ChatProcessor:
                             },
                         }
             except Exception:
+                # LLM 流式失败时走草稿兜底，不中断接口。
                 pass
 
             final_answer = "".join(chunks).strip()
@@ -136,6 +149,7 @@ class ChatProcessor:
         )
 
     def _build_stream_prompt(self, message: str, draft_answer: str, intent: str) -> str:
+        """构建给 LLM 的流式润色提示词。"""
         return f"""
 你是医疗问答助手。请基于用户问题和已有专业草稿，生成一段自然、清晰、适合直接展示给用户的中文回答。
 
@@ -156,11 +170,13 @@ class ChatProcessor:
 """.strip()
 
     def _segment_text(self, text: str, chunk_size: int = 24) -> list[str]:
+        """将文本按固定长度切块，便于稳定推送 SSE chunk。"""
         if not text:
             return []
         return [text[index:index + chunk_size] for index in range(0, len(text), chunk_size)]
 
     def _should_bypass_stream_llm(self, intent: str, draft_answer: str) -> bool:
+        """判断是否跳过 LLM 流式润色。"""
         if intent != "report_analysis":
             return False
         text = draft_answer.strip()

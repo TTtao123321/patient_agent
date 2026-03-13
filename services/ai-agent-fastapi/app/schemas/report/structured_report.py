@@ -1,11 +1,11 @@
-"""Structured report schemas for medical report analysis."""
+"""报告结构化解析模型定义。"""
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class IndicatorDto(BaseModel):
-    """Single medical indicator extracted from report."""
+    """报告中抽取的单个检验指标。"""
 
     name: str = Field(..., description="指标名称，如 白细胞、血红蛋白")
     value: float = Field(..., description="检测数值")
@@ -21,7 +21,7 @@ class IndicatorDto(BaseModel):
 
 
 class FindingDto(BaseModel):
-    """Single finding/observation from imaging or other reports."""
+    """报告中抽取的单个影像/观察发现。"""
 
     name: str = Field(..., description="发现名称，如 磨玻璃影、结节")
     status: Literal["abnormal", "normal"] = Field(
@@ -34,7 +34,7 @@ class FindingDto(BaseModel):
 
 
 class ReportMetaDto(BaseModel):
-    """Metadata of a single medical report."""
+    """单份医疗报告的元信息。"""
 
     report_no: str = Field(..., description="报告编号")
     report_title: str = Field(..., description="报告标题，如 血液检查报告")
@@ -51,7 +51,7 @@ class ReportMetaDto(BaseModel):
 
 
 class StructuredReportDto(BaseModel):
-    """Complete structured medical report analysis result."""
+    """完整结构化报告解析结果。"""
 
     report_type: Literal["laboratory", "imaging", "general"] = Field(
         ..., description="报告大分类：化验类、影像类或其他"
