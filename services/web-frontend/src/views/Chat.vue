@@ -4,16 +4,15 @@
     <template #sidebar>
       <Sidebar
         ref="sidebarRef"
-        :active-session-no="activeSessionNo"
+        :active-session-no="chatStore.activeSessionNo"
         @select="handleSelectSession"
         @new-chat="handleNewChat"
       />
     </template>
 
     <!-- ── 中：聊天窗口 ── -->
-    <div class="chat-window">
-      <!-- 欢迎页（无活跃会话时） -->
-      <div v-if="!activeSessionNo" class="chat-welcome">
+    <div class="chat-main">
+      <div v-if="!chatStore.currentMessages.length && !chatStore.activeSessionNo && !chatStore.historyLoading" class="chat-welcome">
         <div class="welcome-content">
           <div class="welcome-icon">⚕️</div>
           <h2 class="welcome-title">你好，我是您的医疗 AI 助手</h2>
@@ -30,43 +29,16 @@
           </div>
         </div>
       </div>
-
-      <!-- 消息列表区（有活跃会话时） -->
-      <el-scrollbar v-else ref="messagesScrollRef" class="messages-scroll">
-        <div class="messages-list">
-          <!-- TODO: 消息列表将在下一阶段实现 -->
-          <p class="messages-placeholder">消息将显示在这里</p>
-        </div>
-      </el-scrollbar>
-
-      <!-- 输入区（始终显示） -->
-      <div class="chat-input-area">
-        <div class="input-wrapper" :class="{ 'is-focused': inputFocused }">
-          <el-input
-            v-model="inputText"
-            type="textarea"
-            :autosize="{ minRows: 2, maxRows: 6 }"
-            placeholder="请描述您的症状或问题（Enter 发送，Shift+Enter 换行）"
-            resize="none"
-            @keydown="handleKeydown"
-            @focus="inputFocused = true"
-            @blur="inputFocused = false"
-          />
-          <div class="input-footer">
-            <span class="char-count" :class="{ 'is-warning': inputText.length > 900 }">
-              {{ inputText.length }} / 1000
-            </span>
-            <el-button
-              type="primary"
-              class="send-btn"
-              :disabled="!inputText.trim()"
-              @click="handleSend"
-            >
-              发 送
-            </el-button>
-          </div>
-        </div>
-      </div>
+      <ChatWindow
+        :messages="chatStore.currentMessages"
+        :show-empty-state="false"
+        :awaiting-reply="awaitingReply"
+        :stream-hint="streamHint"
+        :history-loading="chatStore.historyLoading"
+        :agent-step="agentStep"
+        @send="handleSend"
+        @stop="handleStop"
+      />
     </div>
 
     <!-- ── 右：报告信息面板 ── -->
@@ -85,21 +57,25 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
+import { ElMessage } from 'element-plus';
 import MainLayout from '../components/layout/MainLayout.vue';
 import Sidebar from '../components/layout/Sidebar.vue';
+import ChatWindow from '../components/chat/ChatWindow.vue';
+import { createSession, streamMessage } from '../api/chat';
+import { useUserStore } from '../stores/user';
+import { useChatStore } from '../stores/chat';
 
-// 布局状态
 const showAside = ref(true);
-
-// 会话状态（后续连接 API）
+const userStore = useUserStore();
+const chatStore = useChatStore();
 const sidebarRef = ref(null);
-const activeSessionNo = ref(null);
-
-// 输入框状态
-const inputText = ref('');
-const inputFocused = ref(false);
-const messagesScrollRef = ref(null);
+const awaitingReply = ref(false);
+const streamHint = ref(null);
+/** 当前 Agent 步骤 { type, text } | null */
+const agentStep = ref(null);
+let latestSessionRequestId = 0;
+let activeStreamController = null;
 
 const quickTips = [
   '我最近持续咳嗽，偶有低烧',
@@ -108,56 +84,281 @@ const quickTips = [
   '最近睡眠不好，容易疲劳',
 ];
 
+onBeforeUnmount(() => {
+  abortActiveStream();
+});
+
 function fillInput(text) {
-  inputText.value = text;
+  handleSend({ role: 'user', content: text });
 }
 
-function handleSelectSession(sessionNo) {
-  activeSessionNo.value = sessionNo;
+async function handleSelectSession(sessionNo) {
+  const requestId = nextSessionRequestId();
+  abortActiveStream();
+  awaitingReply.value = false;
+  // switchSession 会设置 activeSessionNo 并按缓存策略拉取历史
+  await chatStore.switchSession(sessionNo);
+  // 若期间用户又切换了其他会话，本次切换已过期，不做额外处理（store 状态由最新操作覆盖）
+  if (requestId !== latestSessionRequestId) return;
 }
 
 function handleNewChat(sessionNo) {
-  activeSessionNo.value = sessionNo ?? null;
-  inputText.value = '';
-}
-
-function handleSend() {
-  if (!inputText.value.trim()) return;
-  // TODO: 调用发送消息 API
-  console.log('[Chat] send:', inputText.value);
-  inputText.value = '';
-}
-
-function handleKeydown(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    handleSend();
+  nextSessionRequestId();
+  abortActiveStream();
+  awaitingReply.value = false;
+  if (sessionNo) {
+    // 侧边栏直接传来了新建好的 sessionNo
+    chatStore.initSession(sessionNo);
+  } else {
+    chatStore.startNewChat();
   }
+}
+
+async function handleSend(message) {
+  const content = message?.content?.trim();
+  if (!content) return;
+
+  const userId = getCurrentUserId();
+  if (!userId) {
+    ElMessage.warning('请先登录后再发送消息');
+    return;
+  }
+
+  const requestId = nextSessionRequestId();
+  abortActiveStream();
+
+  try {
+    const sessionNo = await ensureSessionNo(userId, content, requestId);
+    if (!sessionNo || requestId !== latestSessionRequestId) {
+      return;
+    }
+
+    // 向 store 推入本次对话的两条消息，liveAssistant 是响应式引用
+    chatStore.pushMessage(sessionNo, { role: 'user', content });
+    const liveAssistant = chatStore.pushMessage(sessionNo, {
+      role: 'assistant',
+      content: '',
+      streaming: true,
+    });
+    awaitingReply.value = true;
+    streamHint.value = 'AI 正在思考您的问题…';
+    agentStep.value = { type: 'router', text: '路由中，分析问题类型' };
+
+    const controller = new AbortController();
+    activeStreamController = controller;
+
+    await streamMessage({
+      sessionNo,
+      userId,
+      content,
+      sceneType: 'mixed',
+      title: buildSessionTitle(content),
+      signal: controller.signal,
+      onEvent: ({ event, data }) => {
+        if (requestId !== latestSessionRequestId) {
+          return;
+        }
+
+        if (event === 'start') {
+          streamHint.value = getIntentHint(data?.intent);
+          agentStep.value = getAgentStep(data?.intent, 'analyzing');
+          return;
+        }
+
+        if (event === 'chunk') {
+          if (!liveAssistant.content) {
+            streamHint.value = 'AI 正在生成回复…';
+            agentStep.value = getAgentStep(agentStep.value?.type, 'generating');
+          }
+          liveAssistant.content += getChunkContent(data);
+          return;
+        }
+
+        if (event === 'done') {
+          const finalAnswer = getDoneContent(data);
+          if (finalAnswer) {
+            liveAssistant.content = finalAnswer;
+          }
+          liveAssistant.streaming = false;
+          awaitingReply.value = false;
+          streamHint.value = null;
+          agentStep.value = null;
+          sidebarRef.value?.refresh?.();
+          return;
+        }
+
+        if (event === 'error') {
+          throw new Error(getErrorMessage(data));
+        }
+      },
+    });
+
+    if (requestId === latestSessionRequestId) {
+      liveAssistant.streaming = false;
+      awaitingReply.value = false;
+      streamHint.value = null;
+      agentStep.value = null;
+      sidebarRef.value?.refresh?.();
+    }
+  } catch (error) {
+    if (error?.name === 'AbortError' || requestId !== latestSessionRequestId) {
+      return;
+    }
+
+    const msgs = chatStore.currentMessages;
+    const lastMessage = msgs[msgs.length - 1];
+    if (lastMessage?.role === 'assistant' && lastMessage.streaming) {
+      lastMessage.streaming = false;
+      lastMessage.content = lastMessage.content || 'AI 回复中断，请稍后重试。';
+    } else {
+      const sessionNo = chatStore.activeSessionNo;
+      if (sessionNo) {
+        chatStore.pushMessage(sessionNo, { role: 'assistant', content: 'AI 回复中断，请稍后重试。' });
+      }
+    }
+    awaitingReply.value = false;
+    streamHint.value = null;
+    agentStep.value = null;
+    ElMessage.error(error?.message || '发送消息失败，请稍后重试');
+  } finally {
+    if (activeStreamController === controller) {
+      activeStreamController = null;
+    }
+  }
+}
+
+function nextSessionRequestId() {
+  latestSessionRequestId += 1;
+  return latestSessionRequestId;
+}
+
+function abortActiveStream() {
+  if (activeStreamController) {
+    activeStreamController.abort();
+    activeStreamController = null;
+  }
+}
+
+function getCurrentUserId() {
+  return userStore.userInfo?.id || userStore.userInfo?.userId || null;
+}
+
+function buildSessionTitle(content) {
+  return content.trim().slice(0, 18) || '新对话';
+}
+
+async function ensureSessionNo(userId, content, requestId) {
+  if (chatStore.activeSessionNo) {
+    return chatStore.activeSessionNo;
+  }
+
+  const response = await createSession(userId, buildSessionTitle(content), 'mixed');
+  if (requestId !== latestSessionRequestId) {
+    return null;
+  }
+
+  const sessionNo = response?.data?.data?.sessionNo;
+  if (!sessionNo) {
+    throw new Error('创建会话失败');
+  }
+
+  // 注册到 store（标记已加载、激活）
+  chatStore.initSession(sessionNo);
+  sidebarRef.value?.refresh?.();
+  return sessionNo;
+}
+
+// loadSessionMessages 已由 chatStore.switchSession 取代，此处删除
+
+function handleStop() {
+  abortActiveStream();
+  const msgs = chatStore.currentMessages;
+  const lastMessage = msgs[msgs.length - 1];
+  if (lastMessage?.role === 'assistant' && lastMessage.streaming) {
+    lastMessage.streaming = false;
+    if (!lastMessage.content) {
+      lastMessage.content = '（已停止生成）';
+    }
+  }
+  awaitingReply.value = false;
+  streamHint.value = null;
+  agentStep.value = null;
+}
+
+function getIntentHint(intent) {
+  const INTENT_HINTS = {
+    symptom: 'AI 正在分析症状描述…',
+    report_analysis: 'AI 正在解读医疗报告…',
+    knowledge: 'AI 正在查询医学知识库…',
+    record: 'AI 正在查阅病历数据…',
+  };
+  return INTENT_HINTS[intent] ?? 'AI 正在思考您的问题…';
+}
+
+/** 根据 intent + 阶段关键字返回 AgentStep 对象 */
+function getAgentStep(intent, phase) {
+  const STEP_MAP = {
+    symptom: {
+      analyzing:  { type: 'symptom',         text: '正在分析症状描述' },
+      generating: { type: 'symptom',         text: '生成问诊建议' },
+    },
+    report_analysis: {
+      analyzing:  { type: 'report_analysis', text: '正在解读检验报告' },
+      generating: { type: 'report_analysis', text: '生成解读结果' },
+    },
+    knowledge: {
+      analyzing:  { type: 'knowledge',       text: '查询医学指南数据库' },
+      generating: { type: 'knowledge',       text: '整理关联知识点' },
+    },
+    record: {
+      analyzing:  { type: 'record',          text: '检索玩家病历数据' },
+      generating: { type: 'record',          text: '就病历生成建议' },
+    },
+  };
+  const steps = STEP_MAP[intent];
+  if (steps?.[phase]) return steps[phase];
+  if (phase === 'generating') return { type: intent ?? 'generating', text: '生成回答' };
+  return { type: intent ?? 'router', text: '分析您的问题' };
+}
+
+function getChunkContent(data) {
+  return data?.content || '';
+}
+
+function getDoneContent(data) {
+  return data?.answer || data?.content || '';
+}
+
+function getErrorMessage(data) {
+  return data?.message || data?.error || 'AI 回复失败';
 }
 </script>
 
 <style scoped>
-/* ── 聊天窗口容器 ── */
-.chat-window {
+.chat-main {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #f4f6f9;
+  position: relative;
 }
 
 /* ── 欢迎页 ── */
 .chat-welcome {
-  flex: 1;
+  position: absolute;
+  inset: 0 0 132px 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
+  pointer-events: none;
+  z-index: 2;
 }
 .welcome-content {
   text-align: center;
   max-width: 520px;
   padding: 40px 24px;
+  pointer-events: auto;
 }
 .welcome-icon {
   font-size: 54px;
@@ -197,70 +398,6 @@ function handleKeydown(e) {
   background: #ecf5ff;
   border-color: #409eff;
   color: #409eff;
-}
-
-/* ── 消息区 ── */
-.messages-scroll {
-  flex: 1;
-  min-height: 0;
-}
-.messages-list {
-  padding: 24px;
-  min-height: 100%;
-}
-.messages-placeholder {
-  text-align: center;
-  color: #c0c4cc;
-  font-size: 14px;
-  padding: 40px 0;
-}
-
-/* ── 输入区 ── */
-.chat-input-area {
-  flex-shrink: 0;
-  padding: 14px 20px 18px;
-  background: #f4f6f9;
-  border-top: 1px solid #e4e7ed;
-}
-.input-wrapper {
-  background: #ffffff;
-  border-radius: 12px;
-  border: 1px solid #dce3ed;
-  padding: 12px 12px 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.input-wrapper.is-focused {
-  border-color: #409eff;
-  box-shadow: 0 0 0 3px rgba(64, 158, 255, 0.1);
-}
-.input-wrapper :deep(.el-textarea__inner) {
-  border: none;
-  padding: 0;
-  resize: none;
-  font-size: 14px;
-  line-height: 1.65;
-  box-shadow: none;
-  background: transparent;
-}
-.input-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f4f4f4;
-}
-.char-count {
-  font-size: 12px;
-  color: #c0c4cc;
-}
-.char-count.is-warning {
-  color: #e6a23c;
-}
-.send-btn {
-  min-width: 88px;
   border-radius: 8px;
 }
 

@@ -15,21 +15,27 @@
 ## 1.1 当前实现状态（2026-03）
 已落地模块：
 - Spring Boot 用户与聊天模块（注册、登录、发送消息、流式回答、历史查询）
+- Spring Boot 会话历史批量接口（`GET /api/v1/chat/history/{sessionNo}`）
 - Java -> FastAPI 的 Agent HTTP / SSE 调用
 - Java -> RabbitMQ -> FastAPI 异步任务链路
 - FastAPI 路由 Agent、流式回答与 RAG 检索接口
 - Tool Calling（4 个医疗工具）
 - 聊天记忆机制：Redis 短期记忆 + MySQL 历史记录（支持 `session_id`）
+- Web 前端聊天体验：会话自动加载、思考动画、Agent 状态展示
 - Router Agent：LLM 意图识别 + 关键词回退，支持 `symptom_consult`、`report_analysis`、`medical_knowledge`、`record_query`
 - Report Agent 结构化解析：指标提取、异常判断、医学解释、JSON 结构化输出
+- Spring Boot 报告文件文本抽取：PDFBox（PDF）+ Tesseract OCR（图片）
 - 可观测能力：请求追踪（`X-Request-Id`）、系统日志、慢调用告警、指标导出（Prometheus）
 
 ## 2. 总体架构（逻辑视图）
 
 ### 2.1 前端层（Web）
-- 技术：React（可替换为 Vue）
+- 技术：Vue 3 + Vite + Pinia + Element Plus
 - 职责：
   - 患者会话 UI、历史会话展示
+  - Session 切换自动拉取历史并做本地缓存
+  - 流式回复状态显示（思考中/生成中）
+  - Agent 阶段可视化（Router/问诊/报告/知识库/病历）
   - 报告上传（PDF/图片/文本）
   - 回答溯源展示（引用知识片段）
   - 风险提示与就医建议展示
@@ -108,6 +114,22 @@
 3. FastAPI 先输出 `start` 事件，再按 `chunk` 持续返回文本片段，最后输出 `done`。
 4. Java 后端将 SSE 原样转发给前端。
 5. 流结束后，Spring Boot 保存完整 AI 消息到聊天表。
+
+### 3.3 会话记忆加载链路（前端）
+1. 用户在侧边栏切换会话。
+2. 前端调用 Spring Boot `GET /api/v1/chat/history/{sessionNo}`。
+3. 若该会话已缓存（Pinia `loaded=true`），则直接命中缓存并渲染。
+4. 若未缓存，加载骨架屏，拉取历史后写入 `sessions[sessionNo].messages`。
+5. 后续在同一会话内发送消息时，流式消息直接追加到当前会话缓存。
+
+### 3.4 报告文本抽取链路（Spring Boot）
+1. 上传报告时优先使用 `rawText`。
+2. 若 `rawText` 为空：
+  - PDF 文件使用 PDFBox 抽取文本。
+  - 图片文件调用 Tesseract OCR 抽取文本。
+  - 文本文件按 UTF-8 读取。
+3. 报告解读时若库中 `rawText` 仍为空，会根据 `fileUrl` 再次触发类型化提取。
+4. 提取到文本后调用 FastAPI Agent 执行解读并回写风险等级与摘要。
 
 ## 4. 非功能设计
 - 安全：

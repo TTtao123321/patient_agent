@@ -84,4 +84,22 @@ public class ChatController {
         String traceId = UUID.randomUUID().toString().replace("-", "");
         return ApiResponse.success(traceId, chatService.getChatHistory(sessionNo, page, pageSize));
     }
+
+    /**
+     * 一次性返回会话完整历史（最多 200 条），供前端切换 Session 时批量加载。
+     * <p>
+     * 路径格式：GET /api/v1/chat/history/{sessionNo}
+     * </p>
+     */
+    @GetMapping("/history/{sessionNo}")
+    public ApiResponse<ChatHistoryResponse> getFullHistory(
+            @PathVariable String sessionNo,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "200") int pageSize
+    ) {
+        String traceId = UUID.randomUUID().toString().replace("-", "");
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(pageSize, 1), 200);
+        return ApiResponse.success(traceId, chatService.getChatHistory(sessionNo, safePage, safeSize));
+    }
 }

@@ -15,6 +15,8 @@ import com.patientagent.modules.report.dto.ReportUploadResponse;
 import com.patientagent.modules.report.entity.MedicalReportEntity;
 import com.patientagent.modules.report.repository.MedicalReportRepository;
 import jakarta.persistence.criteria.Predicate;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -68,6 +71,12 @@ public class ReportServiceImpl implements ReportService {
     @Value("${app.report.upload-dir:uploads/reports}")
     private String uploadDir;
 
+    @Value("${app.report.ocr.tesseract-cmd:tesseract}")
+    private String tesseractCmd;
+
+    @Value("${app.report.ocr.lang:eng}")
+    private String tesseractLang;
+
     public ReportServiceImpl(
             MedicalReportRepository medicalReportRepository,
             MedicalRecordRepository medicalRecordRepository,
@@ -101,8 +110,15 @@ public class ReportServiceImpl implements ReportService {
         }
 
         String finalRawText = rawText;
-        if ((finalRawText == null || finalRawText.isBlank()) && file != null && !file.isEmpty() && isTextLikeFile(file.getOriginalFilename())) {
-            finalRawText = readTextSafely(file);
+        if ((finalRawText == null || finalRawText.isBlank()) && file != null && !file.isEmpty()) {
+            String filename = file.getOriginalFilename();
+            if (isPdfFile(filename)) {
+                finalRawText = readPdfTextSafely(file);
+            } else if (isImageFile(filename)) {
+                finalRawText = readImageTextSafely(file);
+            } else if (isTextLikeFile(filename)) {
+                finalRawText = readTextSafely(file);
+            }
         }
 
         MedicalReportEntity entity = new MedicalReportEntity();
@@ -434,12 +450,22 @@ public class ReportServiceImpl implements ReportService {
         }
 
         Path path = Paths.get(fileUrl);
-        if (!Files.exists(path) || Files.isDirectory(path) || !isTextLikeFile(path.getFileName().toString())) {
+        if (!Files.exists(path) || Files.isDirectory(path)) {
             return null;
         }
 
         try {
-            return Files.readString(path, StandardCharsets.UTF_8);
+            String filename = path.getFileName().toString();
+            if (isTextLikeFile(filename)) {
+                return normalizeExtractedText(Files.readString(path, StandardCharsets.UTF_8));
+            }
+            if (isPdfFile(filename)) {
+                return readPdfTextSafely(path);
+            }
+            if (isImageFile(filename)) {
+                return readImageTextSafely(path);
+            }
+            return null;
         } catch (IOException ex) {
             return null;
         }
@@ -505,10 +531,137 @@ public class ReportServiceImpl implements ReportService {
 
     private String readTextSafely(MultipartFile file) {
         try {
-            return new String(file.getBytes(), StandardCharsets.UTF_8);
+            return normalizeExtractedText(new String(file.getBytes(), StandardCharsets.UTF_8));
         } catch (IOException ex) {
             return null;
         }
+    }
+
+    private String readPdfTextSafely(MultipartFile file) {
+        try {
+            return extractPdfText(file.getBytes());
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private String readPdfTextSafely(Path filePath) {
+        try {
+            return extractPdfText(Files.readAllBytes(filePath));
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private String readImageTextSafely(MultipartFile file) {
+        Path tempFile = null;
+        try {
+            String suffix = imageSuffix(file.getOriginalFilename());
+            tempFile = Files.createTempFile("report-ocr-", suffix);
+            Files.write(tempFile, file.getBytes());
+            return runTesseract(tempFile);
+        } catch (IOException ex) {
+            return null;
+        } finally {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException ignored) {
+                    // best-effort cleanup
+                }
+            }
+        }
+    }
+
+    private String readImageTextSafely(Path filePath) {
+        return runTesseract(filePath);
+    }
+
+    private String runTesseract(Path imagePath) {
+        ProcessBuilder pb = new ProcessBuilder(
+                tesseractCmd,
+                imagePath.toString(),
+                "stdout",
+                "-l",
+                tesseractLang
+        );
+        pb.redirectErrorStream(true);
+
+        try {
+            Process process = pb.start();
+            StringBuilder output = new StringBuilder();
+            try (InputStreamReader isr = new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8)) {
+                char[] buffer = new char[1024];
+                int len;
+                while ((len = isr.read(buffer)) != -1) {
+                    output.append(buffer, 0, len);
+                }
+            }
+            int exitCode = process.waitFor();
+            if (exitCode != 0) {
+                return null;
+            }
+            return normalizeExtractedText(output.toString());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private String extractPdfText(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        try (PDDocument document = PDDocument.load(bytes)) {
+            if (document.getNumberOfPages() <= 0) {
+                return null;
+            }
+            PDFTextStripper stripper = new PDFTextStripper();
+            String text = stripper.getText(document);
+            return normalizeExtractedText(text);
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private String normalizeExtractedText(String text) {
+        if (text == null) {
+            return null;
+        }
+        String normalized = text.replace("\u0000", "").trim();
+        return normalized.isBlank() ? null : normalized;
+    }
+
+    private boolean isPdfFile(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        return filename.toLowerCase().endsWith(".pdf");
+    }
+
+    private boolean isImageFile(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        String lower = filename.toLowerCase();
+        return lower.endsWith(".png")
+                || lower.endsWith(".jpg")
+                || lower.endsWith(".jpeg")
+                || lower.endsWith(".bmp")
+                || lower.endsWith(".tif")
+                || lower.endsWith(".tiff")
+                || lower.endsWith(".webp");
+    }
+
+    private String imageSuffix(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return ".png";
+        }
+        String lower = filename.toLowerCase();
+        int idx = lower.lastIndexOf('.');
+        if (idx == -1) {
+            return ".png";
+        }
+        return lower.substring(idx);
     }
 
     private boolean isTextLikeFile(String filename) {

@@ -1,16 +1,27 @@
 import axios from 'axios';
 
+export const API_BASE_URL = 'http://localhost:8080/api';
+
+export function getAuthHeaders() {
+  const token = localStorage.getItem('token');
+  return token
+    ? {
+        Authorization: `Bearer ${token}`,
+      }
+    : {};
+}
+
 const request = axios.create({
-  baseURL: 'http://localhost:8080/api',
+  baseURL: API_BASE_URL,
   timeout: 15000,
 });
 
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
+    const authHeaders = getAuthHeaders();
+    if (Object.keys(authHeaders).length > 0) {
       config.headers = config.headers || {};
-      config.headers.Authorization = `Bearer ${token}`;
+      Object.assign(config.headers, authHeaders);
     }
     return config;
   },

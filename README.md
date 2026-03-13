@@ -9,7 +9,7 @@
 
 当前仓库已经落地并可运行的核心能力：
 - Spring Boot 用户模块：注册、登录、`/me`
-- Spring Boot 聊天模块：同步发送、异步发送、SSE 流式回答、历史分页
+- Spring Boot 聊天模块：同步发送、异步发送、SSE 流式回答、历史分页、会话历史批量加载
 - Java -> Python Agent HTTP 调用链
 - Java -> RabbitMQ -> Python Agent 异步任务链路
 - FastAPI 多 Agent 路由（Symptom/Report/Knowledge/Record）
@@ -22,6 +22,11 @@
 - 流式回答机制：
   - FastAPI `StreamingResponse`
   - Java `SseEmitter` 代理转发
+- 前端聊天体验增强（Vue3 + Pinia）：
+  - 会话记忆自动加载：切换 Session 自动调用 `/api/v1/chat/history/{sessionNo}`
+  - 会话级缓存：已加载会话不重复请求，支持失效重拉
+  - 等待态动画：`AI 正在思考...` 动画气泡与流式状态提示
+  - Agent 状态可视化：展示 Router/问诊/报告/知识库/病历阶段
 - Report Agent 报告结构化解析：
   - 指标抽取（如白细胞、血红蛋白、血脂、血糖）
   - 异常判断（high/low/normal）
@@ -31,10 +36,14 @@
   - 请求追踪：`X-Request-Id` 贯穿 Java <-> FastAPI
   - 系统日志：请求开始/结束、Agent 路由、Tool 调用、慢调用告警
   - 监控指标：FastAPI `/metrics` + `/metrics/prometheus`，Spring Boot Actuator
+- 报告文本抽取增强（新增）：
+  - PDF：Spring Boot 使用 PDFBox 自动抽取文本
+  - 图片：Spring Boot 调用 Tesseract OCR 抽取文本（支持中文+英文）
+  - 兜底解读：`rawText` 为空时会基于文件类型自动尝试提取，再进入 AI 解读
 
 ## 技术栈
 
-- 前端：`React`（目录已预留，当前未落地页面代码）
+- 前端：`Vue 3 + Vite + Pinia + Element Plus`
 - 业务后端：`Java 17 + Spring Boot 3.3.2`
 - AI 服务：`Python FastAPI`
 - 模型：`Ollama + Qwen`
@@ -55,7 +64,7 @@ patient_agent/
 ├── services/
 │   ├── backend-springboot/            # Java 业务后端（已实现）
 │   ├── ai-agent-fastapi/              # Python Agent 服务（已实现）
-│   └── web-frontend/                  # 前端目录（预留）
+│   └── web-frontend/                  # 前端工程（已实现聊天/报告页面）
 ├── infra/
 ├── knowledge_base/
 ├── scripts/
@@ -71,6 +80,9 @@ patient_agent/
 - `POST /api/v1/chat/messages/send`
 - `POST /api/v1/chat/messages/stream`
 - `GET /api/v1/chat/sessions/{sessionNo}/messages`
+- `GET /api/v1/chat/history/{sessionNo}`
+- `POST /api/v1/reports/upload`
+- `POST /api/v1/reports/{reportNo}/interpret`
 
 ### FastAPI（对后端）
 - `POST /agent/chat`
@@ -109,6 +121,10 @@ mvn spring-boot:run
 - `app.monitoring.slow-request-ms`（默认 `1200`）
 - `app.monitoring.slow-agent-call-ms`（默认 `1500`）
 
+报告 OCR 配置（图片文本提取）：
+- `app.report.ocr.tesseract-cmd`（默认 `tesseract`，当前示例为 `/opt/homebrew/bin/tesseract`）
+- `app.report.ocr.lang`（默认 `eng`，当前示例为 `chi_sim+eng`）
+
 ### 2. AI Agent FastAPI
 
 ```bash
@@ -130,6 +146,21 @@ cd services/ai-agent-fastapi
 curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/metrics
 curl http://127.0.0.1:8000/metrics/prometheus
+```
+
+### 3. 前端 Web（Vue）
+
+```bash
+cd services/web-frontend
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+生产构建：
+
+```bash
+cd services/web-frontend
+npm run build
 ```
 
 ## 多轮记忆验证示例
@@ -185,6 +216,13 @@ SSE 事件包含：
 - `chunk`：逐步返回文本片段
 - `done`：返回最终完整回答
 
+## 前端会话记忆与状态展示
+
+- 会话切换：前端调用 `GET /api/v1/chat/history/{sessionNo}` 一次性加载当前会话历史（默认最多 200 条）
+- 缓存策略：`Pinia chat store` 维护 `sessions[sessionNo] -> { messages, loading, loaded }`，命中缓存不重复请求
+- 流式状态：发送后先展示“AI 正在思考”，收到 `chunk` 后转为“AI 正在生成回复”
+- Agent 进度：基于 SSE `start/chunk/done` 与意图映射显示 `Router Agent / 问诊 Agent / 报告解读 Agent / 知识库检索 Agent / 病历 Agent`
+
 ## 报告结构化解析说明
 
 `report_analysis` 意图下，`ReportAgent` 会返回结构化 JSON，核心字段：
@@ -196,6 +234,18 @@ SSE 事件包含：
 - `recent_reports`：关联报告元数据
 
 Schema 位于：`services/ai-agent-fastapi/app/schemas/report/structured_report.py`
+
+### 文件文本提取策略（Spring Boot）
+
+- 上传阶段（`/api/v1/reports/upload`）：
+  - 优先使用请求体 `rawText`
+  - 若 `rawText` 为空且上传了文件：
+    - PDF：使用 PDFBox 抽取文本
+    - 图片：调用 Tesseract OCR 抽取文本
+    - 文本类文件（txt/md/csv/json）：按 UTF-8 读取
+- 解读阶段（`/api/v1/reports/{reportNo}/interpret`）：
+  - 若库中 `rawText` 为空，会根据 `fileUrl` 再次尝试 PDF/OCR/文本读取，成功后进入 AI 解读
+  - 提取失败或无文本时返回业务错误，避免空内容解读
 
 快速验证：
 
@@ -223,11 +273,12 @@ cd /Users/taot/Desktop/projects/patient_agent
 - 数据库设计：`docs/database-design.md`
 - REST API 设计：`shared/api-contracts/rest-api-design.md`
 - FastAPI 模块说明：`services/ai-agent-fastapi/README.md`
+- 前端模块说明：`services/web-frontend/README.md`
 - Tool Calling 细节：`TOOL_CALLING_IMPLEMENTATION.md`
 - Router 优化说明：`ROUTER_AGENT_OPTIMIZATION.md`
 
 ## 注意事项
 
 - 仓库已忽略 `.venv` 与 `__pycache__`，避免提交本地环境文件。
-- `services/web-frontend` 当前为空目录，前端尚未实现。
+- 图片 OCR 依赖系统 `tesseract` 二进制与语言包（示例：`chi_sim`、`eng`）。
 - AI 依赖建议使用 `0.3.x` 的 LangChain 兼容线，避免导入路径不兼容问题。

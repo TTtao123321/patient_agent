@@ -53,9 +53,13 @@ Content-Type: multipart/form-data
 | departmentName   | String | 科室名称                                      |
 | reportDate       | String | 报告日期，格式 `yyyy-MM-dd` 或 `yyyy-MM-ddTHH:mm:ss`，缺省取当前时间 |
 | rawText          | String | 报告原始文本内容                              |
-| file             | File   | 报告文件（支持 .txt .md .csv .json 自动提取文本；其他格式仅保存路径） |
+| file             | File   | 报告文件（支持 PDF、图片、txt/md/csv/json 自动提取文本） |
 
-**文件处理逻辑**：若同时传入 `rawText` 和 `file`，优先使用 `rawText`。若只传入文本类型文件，系统自动读取文件内容填充 `rawText` 字段。
+**文件处理逻辑**：若同时传入 `rawText` 和 `file`，优先使用 `rawText`。若 `rawText` 为空且传入文件，系统会按类型提取文本并填充 `rawText` 字段：
+
+- PDF：使用 Apache PDFBox（`PDDocument` + `PDFTextStripper`）抽取文本。
+- 图片（png/jpg/jpeg/webp/bmp 等）：调用 Tesseract OCR 抽取文本。
+- 文本类文件（txt/md/csv/json）：按 UTF-8 直接读取。
 
 **响应示例**
 
@@ -169,6 +173,14 @@ POST /api/v1/reports/{reportNo}/interpret?userId=1
 
 **前提**：报告必须存在 `rawText` 或可读取的文本文件，否则返回业务错误。FastAPI AI 服务须已启动（默认 `http://127.0.0.1:8000`）。
 
+**解读兜底策略（新增）**：当报告记录中的 `rawText` 为空时，`interpret` 会根据 `fileUrl` 再次自动尝试文本抽取：
+
+- PDF 路径：再次执行 PDFBox 抽取。
+- 图片路径：再次执行 OCR。
+- 文本路径：再次按 UTF-8 读取。
+
+若提取成功，继续进入 AI 解读；若仍为空，返回“报告原文为空”业务错误。
+
 ---
 
 ### 7. 查询关联病历摘要
@@ -265,6 +277,8 @@ modules/medicalrecord/
 | 配置键                     | 默认值           | 说明                     |
 |---------------------------|-----------------|--------------------------|
 | `app.report.upload-dir`   | `uploads/reports` | 文件上传本地存储目录      |
+| `app.report.ocr.tesseract-cmd` | `tesseract` | OCR 可执行文件路径 |
+| `app.report.ocr.lang`     | `eng`           | OCR 语言包（支持 `chi_sim+eng`） |
 
 在 `application.yml` 中可覆写：
 
@@ -272,7 +286,12 @@ modules/medicalrecord/
 app:
   report:
     upload-dir: /data/patient_agent/reports
+    ocr:
+      tesseract-cmd: /opt/homebrew/bin/tesseract
+      lang: chi_sim+eng
 ```
+
+> 运行 OCR 前需确保宿主机已安装 `tesseract` 与对应语言包（如 `chi_sim`）。
 
 ---
 

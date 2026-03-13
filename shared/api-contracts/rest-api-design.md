@@ -106,13 +106,20 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| file | file | 是 | PDF/图片/文本文件 |
-| report_type | string | 是 | `blood`/`ct`/`mri`/`pathology`/`ultrasound` |
-| report_title | string | 是 | 报告标题 |
-| report_date | string | 是 | `YYYY-MM-DD HH:mm:ss` |
-| hospital_name | string | 否 | 医院名称 |
-| department_name | string | 否 | 科室名称 |
-| medical_record_id | long | 否 | 关联病历ID |
+| userId | long | 是 | 用户 ID（用于用户隔离校验） |
+| file | file | 否 | PDF/图片/文本文件（与 `rawText` 二选一，至少提供一个） |
+| rawText | string | 否 | 报告原文文本（与 `file` 二选一，至少提供一个） |
+| reportType | string | 是 | 报告类型（如 `blood`/`ct`/`mri`/`pathology`/`ultrasound`） |
+| reportTitle | string | 是 | 报告标题 |
+| reportDate | string | 否 | 报告日期，支持 `yyyy-MM-dd` / `yyyy-MM-ddTHH:mm:ss` |
+| hospitalName | string | 否 | 医院名称 |
+| departmentName | string | 否 | 科室名称 |
+| medicalRecordId | long | 否 | 关联病历 ID |
+
+文件抽取说明：
+- PDF：后端使用 PDFBox 自动抽取文本。
+- 图片：后端使用 Tesseract OCR 自动抽取文本。
+- 文本文件：后端按 UTF-8 读取。
 
 - 返回结构（data）：
 
@@ -124,13 +131,14 @@
 | created_at | string | 创建时间 |
 
 ### 3.2 获取报告详情
-- 接口路径：`GET /api/v1/reports/{report_id}`
+- 接口路径：`GET /api/v1/reports/{reportNo}`
 - 请求方式：`GET`
 - 请求参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| report_id | long | 是 | 路径参数 |
+| reportNo | string | 是 | 路径参数（报告编号） |
+| userId | long | 是 | Query 参数 |
 
 - 返回结构（data）：
 
@@ -164,22 +172,23 @@
 - 返回结构：分页结构，`items` 每项包含 `report_id`、`report_title`、`report_type`、`report_date`、`risk_level`、`review_status`。
 
 ### 3.4 触发报告解读（Agent）
-- 接口路径：`POST /api/v1/reports/{report_id}/interpret`
+- 接口路径：`POST /api/v1/reports/{reportNo}/interpret`
 - 请求方式：`POST`
 - 请求参数：
 
 | 参数 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| report_id | long | 是 | 路径参数 |
-| mode | string | 否 | `sync` 或 `async`，默认 `async` |
+| reportNo | string | 是 | 路径参数（报告编号） |
+| userId | long | 是 | Query 参数 |
 
 - 返回结构（data）：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| task_id | string | 异步任务ID |
-| report_id | long | 报告ID |
-| status | string | `QUEUED` / `RUNNING` / `DONE` |
+| reportNo | string | 报告编号 |
+| interpretationSummary | string | 解读摘要 |
+| riskLevel | string | 风险等级 |
+| reviewStatus | string | `REVIEWED` |
 
 ## 4. 聊天系统
 
@@ -254,7 +263,33 @@ SSE 事件：
 | pageSize | int | 否 | 默认 50 |
 
 - 返回结构：分页结构，`items` 每项包含 `messageId`、`senderType`、`content`、`agentType`、`sentAt`。
-### 4.5 会话列表
+
+### 4.5 会话历史批量加载（前端会话切换）
+- 接口路径：`GET /api/v1/chat/history/{sessionNo}`
+- 请求方式：`GET`
+- 设计目的：前端切换会话时一次性加载当前会话历史，减少分页拉取带来的首屏延迟。
+- 请求参数（Path + Query）：
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| sessionNo | string | 是 | 会话编号 |
+| page | int | 否 | 默认 1 |
+| pageSize | int | 否 | 默认 200，最大 200 |
+
+- 返回结构（data）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| sessionNo | string | 会话编号 |
+| items | array | 消息列表（按时间升序） |
+| total | long | 当前会话消息总数 |
+| page | int | 当前页 |
+| pageSize | int | 当前页大小 |
+
+`items` 每项字段：`messageNo`、`senderType`、`content`、`agentType`、`sentAt`。
+
+说明：`/chat/history/{sessionNo}` 与 `/chat/sessions/{sessionNo}/messages` 底层复用同一历史查询服务，差异在于默认页大小和前端使用语义。
+### 4.6 会话列表
 - 接口路径：`GET /api/v1/chat/sessions`
 - 请求方式：`GET`
 - 请求参数（Query）：

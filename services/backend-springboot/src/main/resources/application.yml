@@ -28,6 +28,10 @@ agent:
   base-url: http://localhost:8000
 
 app:
+  report:
+    ocr:
+      tesseract-cmd: /opt/homebrew/bin/tesseract
+      lang: chi_sim+eng
   monitoring:
     slow-request-ms: 1200
     slow-agent-call-ms: 1500
