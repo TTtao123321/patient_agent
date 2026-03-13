@@ -21,6 +21,8 @@
 - Tool Calling（4 个医疗工具）
 - 聊天记忆机制：Redis 短期记忆 + MySQL 历史记录（支持 `session_id`）
 - Router Agent：LLM 意图识别 + 关键词回退，支持 `symptom_consult`、`report_analysis`、`medical_knowledge`、`record_query`
+- Report Agent 结构化解析：指标提取、异常判断、医学解释、JSON 结构化输出
+- 可观测能力：请求追踪（`X-Request-Id`）、系统日志、慢调用告警、指标导出（Prometheus）
 
 ## 2. 总体架构（逻辑视图）
 
@@ -40,6 +42,8 @@
   - 调用 Python Agent 服务并做熔断、限流、重试
   - 代理流式输出（SSE）
   - 发送 RabbitMQ 异步 AI 任务
+  - 请求追踪与日志聚合（MDC traceId）
+  - 暴露 Actuator 与 Prometheus 监控端点
 - 数据存储：
   - MySQL：用户、会话、问答记录、报告元数据
   - Redis：会话缓存、限流计数、热点问答缓存
@@ -54,6 +58,7 @@
 - Report Agent：
   - 解析检查报告内容（OCR/文本提取后的结构化）
   - 结合参考区间给出解释与注意事项
+  - 返回稳定结构化 JSON（Pydantic Schema）
 - Knowledge Agent：
   - 对接 RAG 检索，生成带来源引用的医学知识回答
 - RecordQuery Agent：
@@ -62,6 +67,10 @@
   - 先生成 Agent 草稿
   - 再调用 LLM 逐步输出最终文本
   - 流结束后统一写回记忆与聊天历史
+- Observability：
+  - 请求追踪中间件（`X-Request-Id`）
+  - 请求/Agent/Tool 调用日志
+  - `/metrics` 与 `/metrics/prometheus`
 
 ### 2.4 模型与知识层
 - Ollama + Qwen 本地模型：负责推理生成
@@ -109,8 +118,9 @@
   - RabbitMQ 解耦耗时任务
   - 流式与异步两条链路分离，降低互相影响
 - 可观测：
-  - 日志（trace_id 贯穿）
-  - 指标（QPS、延迟、Agent 命中率、检索召回）
+  - 日志（trace_id/request_id 贯穿）
+  - 指标（QPS、延迟、Agent 命中率、Tool 调用成功率）
+  - 慢请求/慢调用阈值告警
 - 合规：
   - 回答附免责声明，不替代医生诊断
 
@@ -126,6 +136,16 @@
 - FastAPI 对 RAG：
   - `POST /rag/retrieve`
   - `POST /rag/ingest`
+
+### 5.1 当前已实现的监控接口
+- FastAPI：
+  - `GET /health`
+  - `GET /metrics`
+  - `GET /metrics/prometheus`
+- Spring Boot：
+  - `GET /actuator/health`
+  - `GET /actuator/metrics`
+  - `GET /actuator/prometheus`
 
 ## 6. 部署建议
 - 本地开发：`docker-compose` 一键拉起 MySQL/Redis/RabbitMQ/Milvus/Ollama。

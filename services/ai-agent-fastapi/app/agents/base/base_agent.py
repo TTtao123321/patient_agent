@@ -1,6 +1,13 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+import logging
+import time
+from typing import Any
+from app.core.settings import settings
+from app.observability.metrics.registry import metrics_registry
 from app.tools.executor.tool_executor import ToolExecutor, ToolCall
+
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
@@ -25,7 +32,24 @@ class BaseAgent(ABC):
         Returns:
             Tool execution result
         """
+        started_at = time.perf_counter()
         result = self.tool_executor.execute_tool(tool_name, **parameters)
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        metrics_registry.record_tool_call(tool_name=tool_name, success=result.success)
+        logger.info(
+            "agent_tool_call tool=%s success=%s latency_ms=%.2f param_keys=%s",
+            tool_name,
+            result.success,
+            latency_ms,
+            sorted(list(parameters.keys())),
+        )
+        if latency_ms >= settings.slow_tool_call_threshold_ms:
+            logger.warning(
+                "slow_tool_call_detected tool=%s latency_ms=%.2f threshold_ms=%s",
+                tool_name,
+                latency_ms,
+                settings.slow_tool_call_threshold_ms,
+            )
         return {
             "success": result.success,
             "data": result.data,

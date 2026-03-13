@@ -22,6 +22,15 @@
 - 流式回答机制：
   - FastAPI `StreamingResponse`
   - Java `SseEmitter` 代理转发
+- Report Agent 报告结构化解析：
+  - 指标抽取（如白细胞、血红蛋白、血脂、血糖）
+  - 异常判断（high/low/normal）
+  - 医学解释与建议
+  - 稳定 JSON 输出（Pydantic Schema）
+- 可观测性（新增）：
+  - 请求追踪：`X-Request-Id` 贯穿 Java <-> FastAPI
+  - 系统日志：请求开始/结束、Agent 路由、Tool 调用、慢调用告警
+  - 监控指标：FastAPI `/metrics` + `/metrics/prometheus`，Spring Boot Actuator
 
 ## 技术栈
 
@@ -67,11 +76,18 @@ patient_agent/
 - `POST /agent/chat`
 - `POST /agent/chat/stream`
 - `GET /agent/sessions/{session_id}/history`
+- `GET /metrics`
+- `GET /metrics/prometheus`
 - `POST /rag/ingest`
 - `POST /rag/retrieve`
 - `GET /tools/available`
 - `POST /tools/execute`
 - `POST /tools/batch`
+
+### Spring Boot 可观测接口
+- `GET /actuator/health`
+- `GET /actuator/metrics`
+- `GET /actuator/prometheus`
 
 ## 本地启动指南
 
@@ -88,6 +104,10 @@ mvn spring-boot:run
 - Redis: `101.126.81.197:6389`
 - RabbitMQ: `101.126.81.197:5672`
 - Agent base-url: `http://localhost:8000`
+
+监控相关配置：
+- `app.monitoring.slow-request-ms`（默认 `1200`）
+- `app.monitoring.slow-agent-call-ms`（默认 `1500`）
 
 ### 2. AI Agent FastAPI
 
@@ -108,6 +128,8 @@ cd services/ai-agent-fastapi
 
 ```bash
 curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/metrics
+curl http://127.0.0.1:8000/metrics/prometheus
 ```
 
 ## 多轮记忆验证示例
@@ -163,6 +185,38 @@ SSE 事件包含：
 - `chunk`：逐步返回文本片段
 - `done`：返回最终完整回答
 
+## 报告结构化解析说明
+
+`report_analysis` 意图下，`ReportAgent` 会返回结构化 JSON，核心字段：
+- `report_type`：`laboratory` / `imaging` / `general`
+- `overall_status`：`normal` / `attention_needed` / `abnormal` / `insufficient_data`
+- `indicators`：指标列表（名称、值、参考范围、状态、解释）
+- `findings`：影像发现列表
+- `medical_advice`：医学建议
+- `recent_reports`：关联报告元数据
+
+Schema 位于：`services/ai-agent-fastapi/app/schemas/report/structured_report.py`
+
+快速验证：
+
+```bash
+cd /Users/taot/Desktop/projects/patient_agent/services/ai-agent-fastapi
+/Users/taot/Desktop/projects/patient_agent/.venv/bin/python -m pytest tests/services/test_report_structured_parser.py -v
+cd /Users/taot/Desktop/projects/patient_agent
+./integration_test_report_analysis.sh
+```
+
+## 日志与追踪说明
+
+- FastAPI：日志自动携带 `request_id`，并在响应头回传 `X-Request-Id`
+- Spring Boot：MDC 记录 `traceId`，日志 pattern 输出 `[traceId=...]`
+- Java -> FastAPI 调用会自动透传 `X-Request-Id`
+- 关键日志事件：
+  - `request_started` / `request_finished`
+  - `agent_route_intent` / `agent_route_completed` / `agent_route_failed`
+  - `agent_tool_call`
+  - `slow_request_detected` / `slow_agent_call_detected` / `slow_tool_call_detected`
+
 ## 文档索引
 
 - 总体架构：`docs/architecture.md`
@@ -170,6 +224,7 @@ SSE 事件包含：
 - REST API 设计：`shared/api-contracts/rest-api-design.md`
 - FastAPI 模块说明：`services/ai-agent-fastapi/README.md`
 - Tool Calling 细节：`TOOL_CALLING_IMPLEMENTATION.md`
+- Router 优化说明：`ROUTER_AGENT_OPTIMIZATION.md`
 
 ## 注意事项
 

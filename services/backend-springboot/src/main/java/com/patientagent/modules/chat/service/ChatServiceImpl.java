@@ -11,6 +11,8 @@ import com.patientagent.modules.chat.entity.ChatMessageEntity;
 import com.patientagent.modules.chat.entity.ChatSessionEntity;
 import com.patientagent.modules.chat.repository.ChatMessageRepository;
 import com.patientagent.modules.chat.repository.ChatSessionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ import java.util.stream.Collectors;
 @Service
 public class ChatServiceImpl implements ChatService {
 
+    private static final Logger log = LoggerFactory.getLogger(ChatServiceImpl.class);
     private static final DateTimeFormatter TS_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final String QUEUED_ANSWER = "AI 任务已提交，正在异步处理中。";
 
@@ -52,6 +55,7 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional
     public SendMessageResponse sendMessage(SendMessageRequest request) {
+        long startedAt = System.currentTimeMillis();
         ChatSessionEntity session = resolveSession(request);
 
         int nextSeq = (int) chatMessageRepository.countBySessionIdAndIsDeleted(session.getId(), 0) + 1;
@@ -65,6 +69,15 @@ public class ChatServiceImpl implements ChatService {
         session.setSessionStatus("PROCESSING");
         chatSessionRepository.save(session);
 
+        log.info(
+            "chat_message_queued sessionNo={} userId={} sceneType={} messageLen={} latencyMs={}",
+            session.getSessionNo(),
+            request.getUserId(),
+            session.getSceneType(),
+            request.getContent() == null ? 0 : request.getContent().length(),
+            System.currentTimeMillis() - startedAt
+        );
+
         SendMessageResponse response = new SendMessageResponse();
         response.setSessionNo(session.getSessionNo());
         response.setUserMessageId(userMessage.getId());
@@ -77,6 +90,7 @@ public class ChatServiceImpl implements ChatService {
     @Override
     @Transactional
     public SseEmitter streamMessage(SendMessageRequest request) {
+        long startedAt = System.currentTimeMillis();
         ChatSessionEntity session = resolveSession(request);
 
         int nextSeq = (int) chatMessageRepository.countBySessionIdAndIsDeleted(session.getId(), 0) + 1;
@@ -89,6 +103,14 @@ public class ChatServiceImpl implements ChatService {
         chatSessionRepository.save(session);
 
         SseEmitter emitter = new SseEmitter(0L);
+        log.info(
+            "chat_stream_requested sessionNo={} userId={} sceneType={} messageLen={} latencyMs={}",
+            session.getSessionNo(),
+            request.getUserId(),
+            session.getSceneType(),
+            request.getContent() == null ? 0 : request.getContent().length(),
+            System.currentTimeMillis() - startedAt
+        );
         streamingExecutor.execute(() -> streamAgentResponse(emitter, request, session, nextSeq + 1));
         return emitter;
     }
@@ -189,6 +211,7 @@ public class ChatServiceImpl implements ChatService {
             ChatSessionEntity session,
             int agentSequenceNo
     ) {
+        long startedAt = System.currentTimeMillis();
         StringBuilder answerBuilder = new StringBuilder();
         String[] agentUsedHolder = new String[]{"router"};
 
@@ -217,11 +240,26 @@ public class ChatServiceImpl implements ChatService {
             session.setSessionStatus("ACTIVE");
             session.setLastMessageAt(LocalDateTime.now());
             chatSessionRepository.save(session);
+                log.info(
+                    "chat_stream_completed sessionNo={} userId={} agent={} answerLen={} latencyMs={}",
+                    session.getSessionNo(),
+                    request.getUserId(),
+                    agentUsedHolder[0],
+                    finalAnswer.length(),
+                    System.currentTimeMillis() - startedAt
+                );
             emitter.complete();
         } catch (Exception ex) {
             session.setSessionStatus("FAILED");
             session.setLastMessageAt(LocalDateTime.now());
             chatSessionRepository.save(session);
+                log.error(
+                    "chat_stream_failed sessionNo={} userId={} error={}",
+                    session.getSessionNo(),
+                    request.getUserId(),
+                    ex.getMessage(),
+                    ex
+                );
             try {
                 emitter.send(SseEmitter.event()
                         .name("error")

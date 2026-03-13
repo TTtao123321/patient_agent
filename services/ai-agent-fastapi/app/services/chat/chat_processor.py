@@ -1,8 +1,13 @@
 from collections.abc import Iterator
+import logging
+import time
 
 from app.agents.router.router_agent import RouterAgent
 from app.llm.llm_client import get_llm_client
 from app.memory.session.session_manager import SessionManager
+
+
+logger = logging.getLogger(__name__)
 
 
 class ChatProcessor:
@@ -12,6 +17,7 @@ class ChatProcessor:
         self.llm_client = get_llm_client()
 
     def process(self, session_id: str, user_id: int, message: str) -> tuple[str, str, str, int]:
+        started_at = time.perf_counter()
         context_text = self.session_manager.build_context_text(session_id=session_id)
         context_messages = self.session_manager.get_context_messages(session_id=session_id)
         query_with_context = message if not context_text else f"{context_text}\n当前问题: {message}"
@@ -26,9 +32,18 @@ class ChatProcessor:
             intent=intent,
             agent_used=agent_used,
         )
+        logger.info(
+            "chat_process_completed session_id=%s user_id=%s intent=%s agent=%s latency_ms=%.2f",
+            session_id,
+            user_id,
+            intent,
+            agent_used,
+            (time.perf_counter() - started_at) * 1000,
+        )
         return answer, intent, agent_used, len(context_messages)
 
     def stream(self, session_id: str, user_id: int, message: str) -> Iterator[dict]:
+        started_at = time.perf_counter()
         context_text = self.session_manager.build_context_text(session_id=session_id)
         context_messages = self.session_manager.get_context_messages(session_id=session_id)
         query_with_context = message if not context_text else f"{context_text}\n当前问题: {message}"
@@ -47,6 +62,14 @@ class ChatProcessor:
                 "used_context_messages": len(context_messages),
             },
         }
+
+        logger.info(
+            "chat_stream_started session_id=%s user_id=%s intent=%s agent=%s",
+            session_id,
+            user_id,
+            intent,
+            agent_used,
+        )
 
         chunks: list[str] = []
         if self._should_bypass_stream_llm(intent=intent, draft_answer=draft_answer):
@@ -103,6 +126,14 @@ class ChatProcessor:
                 "agent_used": agent_used,
             },
         }
+        logger.info(
+            "chat_stream_completed session_id=%s user_id=%s intent=%s agent=%s latency_ms=%.2f",
+            session_id,
+            user_id,
+            intent,
+            agent_used,
+            (time.perf_counter() - started_at) * 1000,
+        )
 
     def _build_stream_prompt(self, message: str, draft_answer: str, intent: str) -> str:
         return f"""

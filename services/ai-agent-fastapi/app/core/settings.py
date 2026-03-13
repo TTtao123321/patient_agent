@@ -2,6 +2,11 @@ import os
 
 
 class Settings:
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    slow_request_threshold_ms: int = int(os.getenv("SLOW_REQUEST_THRESHOLD_MS", "1200"))
+    slow_agent_call_threshold_ms: int = int(os.getenv("SLOW_AGENT_CALL_THRESHOLD_MS", "1500"))
+    slow_tool_call_threshold_ms: int = int(os.getenv("SLOW_TOOL_CALL_THRESHOLD_MS", "1000"))
+
     rag_collection_name: str = os.getenv("RAG_COLLECTION_NAME", "medical_knowledge")
     milvus_host: str = os.getenv("MILVUS_HOST", "localhost")
     milvus_port: str = os.getenv("MILVUS_PORT", "19530")

@@ -4,7 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.patientagent.client.agent.dto.AgentChatRequest;
 import com.patientagent.client.agent.dto.AgentStreamEvent;
+import com.patientagent.common.tracing.RequestTraceFilter;
 import com.patientagent.config.AgentProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -28,6 +33,10 @@ import java.util.function.Consumer;
 @Component
 public class AgentHttpClient implements AgentClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AgentHttpClient.class);
+    @Value("${app.monitoring.slow-agent-call-ms:1500}")
+    private long slowAgentCallThresholdMs;
+
     private final RestTemplate restTemplate;
     private final AgentProperties agentProperties;
     private final ObjectMapper objectMapper;
@@ -45,6 +54,7 @@ public class AgentHttpClient implements AgentClient {
     @Override
     public String chat(String sessionNo, Long userId, String message) {
         String url = normalizeBaseUrl(agentProperties.getBaseUrl()) + "/agent/chat";
+        long startedAt = System.currentTimeMillis();
 
         AgentChatRequest request = new AgentChatRequest();
         request.setSessionNo(sessionNo);
@@ -53,8 +63,18 @@ public class AgentHttpClient implements AgentClient {
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        String traceId = MDC.get(RequestTraceFilter.TRACE_ID_KEY);
+        if (traceId != null && !traceId.isBlank()) {
+            headers.set(RequestTraceFilter.REQUEST_ID_HEADER, traceId);
+        }
 
         try {
+            log.info(
+                    "agent_chat_call_started sessionNo={} userId={} messageLen={}",
+                    sessionNo,
+                    userId,
+                    message == null ? 0 : message.length()
+            );
             ResponseEntity<JsonNode> response = restTemplate.exchange(
                     url,
                     HttpMethod.POST,
@@ -66,8 +86,27 @@ public class AgentHttpClient implements AgentClient {
                 throw new IllegalStateException("Agent service returned invalid response");
             }
 
+            long latencyMs = System.currentTimeMillis() - startedAt;
+            log.info(
+                    "agent_chat_call_finished sessionNo={} userId={} status={} latencyMs={}",
+                    sessionNo,
+                    userId,
+                    response.getStatusCode().value(),
+                    latencyMs
+            );
+            if (latencyMs >= slowAgentCallThresholdMs) {
+                log.warn(
+                        "slow_agent_chat_call_detected sessionNo={} userId={} latencyMs={} thresholdMs={}",
+                        sessionNo,
+                        userId,
+                        latencyMs,
+                        slowAgentCallThresholdMs
+                );
+            }
+
             return parseAnswer(response.getBody());
         } catch (RestClientException ex) {
+            log.error("agent_chat_call_failed sessionNo={} userId={} error={}", sessionNo, userId, ex.getMessage());
             throw new IllegalStateException("Failed to call agent service: " + ex.getMessage(), ex);
         }
     }
@@ -75,6 +114,7 @@ public class AgentHttpClient implements AgentClient {
     @Override
     public void streamChat(String sessionNo, Long userId, String message, Consumer<AgentStreamEvent> eventConsumer) {
         String url = normalizeBaseUrl(agentProperties.getBaseUrl()) + "/agent/chat/stream";
+        long startedAt = System.currentTimeMillis();
 
         AgentChatRequest request = new AgentChatRequest();
         request.setSessionNo(sessionNo);
@@ -83,12 +123,25 @@ public class AgentHttpClient implements AgentClient {
 
         try {
             String requestBody = objectMapper.writeValueAsString(request);
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(url))
+            String traceId = MDC.get(RequestTraceFilter.TRACE_ID_KEY);
+            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                     .header("Content-Type", "application/json")
                     .header("Accept", "text/event-stream")
-                    .timeout(Duration.ofMinutes(5))
+                    .timeout(Duration.ofMinutes(5));
+            if (traceId != null && !traceId.isBlank()) {
+                builder.header(RequestTraceFilter.REQUEST_ID_HEADER, traceId);
+            }
+
+            HttpRequest httpRequest = builder
                     .POST(HttpRequest.BodyPublishers.ofString(requestBody, StandardCharsets.UTF_8))
                     .build();
+
+            log.info(
+                    "agent_stream_call_started sessionNo={} userId={} messageLen={}",
+                    sessionNo,
+                    userId,
+                    message == null ? 0 : message.length()
+            );
 
             HttpResponse<java.io.InputStream> response = httpClient.send(
                     httpRequest,
@@ -100,10 +153,29 @@ public class AgentHttpClient implements AgentClient {
             }
 
             parseSseStream(response, eventConsumer);
+            long latencyMs = System.currentTimeMillis() - startedAt;
+            log.info(
+                    "agent_stream_call_finished sessionNo={} userId={} status={} latencyMs={}",
+                    sessionNo,
+                    userId,
+                    response.statusCode(),
+                    latencyMs
+            );
+            if (latencyMs >= slowAgentCallThresholdMs) {
+                log.warn(
+                        "slow_agent_stream_call_detected sessionNo={} userId={} latencyMs={} thresholdMs={}",
+                        sessionNo,
+                        userId,
+                        latencyMs,
+                        slowAgentCallThresholdMs
+                );
+            }
         } catch (IOException ex) {
+            log.error("agent_stream_call_failed sessionNo={} userId={} error={}", sessionNo, userId, ex.getMessage());
             throw new IllegalStateException("Failed to read agent stream: " + ex.getMessage(), ex);
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            log.error("agent_stream_call_interrupted sessionNo={} userId={}", sessionNo, userId);
             throw new IllegalStateException("Agent stream request interrupted", ex);
         }
     }
