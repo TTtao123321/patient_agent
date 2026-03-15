@@ -48,7 +48,7 @@ class Settings:
     context_message_limit: int = int(os.getenv("CONTEXT_MESSAGE_LIMIT", "12"))
 
     ollama_base_url: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "qwen")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "Qwen2.5-3B:latest")
 
     @property
     def milvus_uri(self) -> str:
