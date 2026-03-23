@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import logging
 import time
-from typing import Any
+from typing import Any, Union, Dict
 from app.core.settings import settings
 from app.observability.metrics.registry import metrics_registry
 from app.tools.executor.tool_executor import ToolExecutor, ToolCall
@@ -21,8 +21,13 @@ class BaseAgent(ABC):
         self.tool_executor = ToolExecutor()
     
     @abstractmethod
-    def handle(self, query: str) -> str:
-        """处理用户问题并返回文本结果。"""
+    def handle(self, query: str, user_id: int) -> Union[str, Dict[str, Any]]:
+        """处理用户问题并返回结果。
+        
+        返回值可以是：
+        - 字符串：简单的文本回答
+        - 字典：包含 'answer'（文本回答）和其他结构化数据
+        """
         raise NotImplementedError
     
     def call_tool(self, tool_name: str, **parameters) -> dict[str, Any]:

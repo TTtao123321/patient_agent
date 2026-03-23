@@ -49,7 +49,45 @@
           <el-button text size="small" @click="showAside = false">收起</el-button>
         </div>
         <div class="panel-body">
-          <el-empty description="本次对话暂无关联报告" :image-size="72" />
+          <div v-if="!currentReports.length" class="empty-state">
+            <el-empty description="本次对话暂无关联报告" :image-size="72" />
+          </div>
+          <div v-else class="reports-list">
+            <div v-for="(report, index) in currentReports" :key="index" class="report-card">
+              <div class="report-header">
+                <div class="report-title">
+                  <span class="report-date">{{ report.report_date }}</span>
+                  <span class="report-name">{{ report.report_title }}</span>
+                </div>
+                <el-tag v-if="report.risk_level" :type="getRiskLevelType(report.risk_level)" size="small">
+                  {{ report.risk_level }}
+                </el-tag>
+              </div>
+              <div class="report-info">
+                <div v-if="report.hospital_name" class="info-item">
+                  <span class="label">🏥 医院：</span>
+                  <span class="value">{{ report.hospital_name }}</span>
+                </div>
+                <div v-if="report.department_name" class="info-item">
+                  <span class="label">🏢 科室：</span>
+                  <span class="value">{{ report.department_name }}</span>
+                </div>
+                <div v-if="report.report_type" class="info-item">
+                  <span class="label">📋 类型：</span>
+                  <span class="value">{{ report.report_type }}</span>
+                </div>
+              </div>
+              <div v-if="report.interpretation_summary" class="report-summary">
+                <div class="summary-title">📝 摘要</div>
+                <div class="summary-content">{{ report.interpretation_summary }}</div>
+              </div>
+              <el-collapse v-if="report.raw_text">
+                <el-collapse-item title="查看完整报告">
+                  <div class="raw-text">{{ report.raw_text }}</div>
+                </el-collapse-item>
+              </el-collapse>
+            </div>
+          </div>
         </div>
       </div>
     </template>
@@ -63,6 +101,7 @@ import MainLayout from '../components/layout/MainLayout.vue';
 import Sidebar from '../components/layout/Sidebar.vue';
 import ChatWindow from '../components/chat/ChatWindow.vue';
 import { createSession, streamMessage } from '../api/chat';
+
 import { useUserStore } from '../stores/user';
 import { useChatStore } from '../stores/chat';
 
@@ -74,6 +113,8 @@ const awaitingReply = ref(false);
 const streamHint = ref(null);
 /** 当前 Agent 步骤 { type, text } | null */
 const agentStep = ref(null);
+/** 当前会话关联的报告列表 */
+const currentReports = ref([]);
 let latestSessionRequestId = 0;
 let activeStreamController = null;
 
@@ -127,6 +168,7 @@ async function handleSend(message) {
   const requestId = nextSessionRequestId();
   abortActiveStream();
 
+  let controller = null;
   try {
     const sessionNo = await ensureSessionNo(userId, content, requestId);
     if (!sessionNo || requestId !== latestSessionRequestId) {
@@ -144,7 +186,7 @@ async function handleSend(message) {
     streamHint.value = 'AI 正在思考您的问题…';
     agentStep.value = { type: 'router', text: '路由中，分析问题类型' };
 
-    const controller = new AbortController();
+    controller = new AbortController();
     activeStreamController = controller;
 
     await streamMessage({
@@ -184,6 +226,10 @@ async function handleSend(message) {
           streamHint.value = null;
           agentStep.value = null;
           sidebarRef.value?.refresh?.();
+          // 保存报告数据
+          if (data?.reports && Array.isArray(data.reports)) {
+            currentReports.value = data.reports;
+          }
           return;
         }
 
@@ -221,7 +267,7 @@ async function handleSend(message) {
     agentStep.value = null;
     ElMessage.error(error?.message || '发送消息失败，请稍后重试');
   } finally {
-    if (activeStreamController === controller) {
+    if (controller && activeStreamController === controller) {
       activeStreamController = null;
     }
   }
@@ -252,7 +298,7 @@ async function ensureSessionNo(userId, content, requestId) {
     return chatStore.activeSessionNo;
   }
 
-  const response = await createSession(userId, buildSessionTitle(content), 'mixed');
+  const response = await createSession(userId, '新对话', 'mixed');
   if (requestId !== latestSessionRequestId) {
     return null;
   }
@@ -331,6 +377,20 @@ function getDoneContent(data) {
 
 function getErrorMessage(data) {
   return data?.message || data?.error || 'AI 回复失败';
+}
+
+function getRiskLevelType(riskLevel) {
+  const level = riskLevel?.toLowerCase() || '';
+  if (level.includes('high') || level.includes('高')) {
+    return 'danger';
+  }
+  if (level.includes('medium') || level.includes('中')) {
+    return 'warning';
+  }
+  if (level.includes('low') || level.includes('低')) {
+    return 'success';
+  }
+  return 'info';
 }
 </script>
 
@@ -423,8 +483,95 @@ function getErrorMessage(data) {
 }
 .panel-body {
   flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.empty-state {
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+.reports-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.report-card {
+  background: #ffffff;
+  border: 1px solid #e8ecf4;
+  border-radius: 12px;
+  padding: 16px;
+}
+.report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.report-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  margin-right: 12px;
+}
+.report-date {
+  font-size: 12px;
+  color: #909399;
+}
+.report-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a2438;
+  line-height: 1.4;
+}
+.report-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.info-item {
+  font-size: 13px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+}
+.info-item .label {
+  color: #909399;
+  flex-shrink: 0;
+}
+.info-item .value {
+  color: #303133;
+}
+.report-summary {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.summary-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #409eff;
+  margin-bottom: 8px;
+}
+.summary-content {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+}
+.raw-text {
+  font-size: 12px;
+  color: #606266;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #fafafa;
+  padding: 12px;
+  border-radius: 6px;
+  max-height: 300px;
+  overflow-y: auto;
 }
 </style>

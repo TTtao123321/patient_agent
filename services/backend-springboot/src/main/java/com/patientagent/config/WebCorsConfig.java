@@ -2,7 +2,10 @@ package com.patientagent.config;
 
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import java.io.File;
 
 /**
  * 全局 CORS 配置，放行本地前端调试地址。
@@ -23,5 +26,12 @@ public class WebCorsConfig implements WebMvcConfigurer {
                 .allowedHeaders("*")
                 .allowCredentials(true)
                 .maxAge(3600);
+    }
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        String uploadDir = System.getProperty("user.dir") + File.separator + "uploads" + File.separator;
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + uploadDir);
     }
 }

@@ -1,25 +1,28 @@
 <template>
   <div class="page-wrap">
-    <h2>Dashboard Page</h2>
-    <el-button type="danger" @click="handleLogout">退出登录</el-button>
+    <Header />
+    <div class="page-content">
+      <h2>Dashboard Page</h2>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router';
-import { useUserStore } from '../stores/user';
-
-const router = useRouter();
-const userStore = useUserStore();
-
-function handleLogout() {
-  userStore.logout();
-  router.push('/login');
-}
+import Header from '../components/layout/Header.vue';
 </script>
 
 <style scoped>
 .page-wrap {
+  min-height: 100vh;
+  background: #f4f6fa;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-content {
+  flex: 1;
+  overflow: auto;
   padding: 24px;
 }
 </style>

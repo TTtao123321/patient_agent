@@ -5,12 +5,12 @@ from app.tools.executor.tool_executor import ToolCall
 class SymptomAgent(BaseAgent):
     """症状咨询 Agent。"""
     
-    def handle(self, query: str) -> str:
+    def handle(self, query: str, user_id: int) -> str:
         """处理症状类问题，结合病历与药物信息给出初步建议。"""
         lines: list[str] = ["【症状咨询 Agent】"]
 
-        # 先读取近期病历用于上下文补充（当前使用示例 user_id）。
-        record_result = self.call_tool("get_medical_record", user_id=1, limit=2)
+        # 先读取近期病历用于上下文补充。
+        record_result = self.call_tool("get_medical_record", user_id=user_id, limit=2)
         recent_complaint: str | None = None
         if record_result["success"] and record_result["data"]:
             records = record_result["data"].get("records", [])

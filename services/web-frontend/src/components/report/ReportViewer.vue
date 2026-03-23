@@ -126,42 +126,59 @@
       </el-descriptions>
 
       <!-- AI 解读 -->
-      <div class="interpret-section">
-        <div class="section-header">
-          <span class="section-title">AI 解读结果</span>
-          <el-button
-            v-if="!activeReport.interpretationSummary || activeReport.reviewStatus === 'FAILED'"
-            size="small"
-            type="primary"
-            plain
-            :loading="interpreting"
-            @click="handleInterpret"
+      <el-collapse v-model="interpretCollapse" class="interpret-collapse">
+        <el-collapse-item title="AI 解读结果" name="interpret">
+          <template #header>
+            <div class="interpret-header">
+              <span>AI 解读结果</span>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="interpreting"
+                @click.stop="handleInterpret"
+              >
+                {{ interpreting ? '解读中…' : (activeReport.interpretationSummary && activeReport.reviewStatus !== 'FAILED' ? '重新解读' : '立即解读') }}
+              </el-button>
+            </div>
+          </template>
+
+          <!-- 解读中 -->
+          <div v-if="interpreting" class="interpret-loading">
+            <el-icon class="is-loading loading-spin"><Loading /></el-icon>
+            <span>AI 正在分析报告内容，请稍候…</span>
+          </div>
+
+          <!-- 无解读内容 -->
+          <div
+            v-else-if="!activeReport.interpretationSummary"
+            class="interpret-empty"
           >
-            {{ interpreting ? '解读中…' : '立即解读' }}
-          </el-button>
-        </div>
+            <el-empty :image-size="56" description="暂无 AI 解读，点击「立即解读」生成" />
+          </div>
 
-        <!-- 解读中 -->
-        <div v-if="interpreting" class="interpret-loading">
-          <el-icon class="is-loading loading-spin"><Loading /></el-icon>
-          <span>AI 正在分析报告内容，请稍候…</span>
-        </div>
+          <!-- 解读内容（Markdown） -->
+          <div
+            v-else
+            class="interpret-body md-body"
+            v-html="renderMarkdown(activeReport.interpretationSummary)"
+          />
+        </el-collapse-item>
+      </el-collapse>
 
-        <!-- 无解读内容 -->
-        <div
-          v-else-if="!activeReport.interpretationSummary"
-          class="interpret-empty"
-        >
-          <el-empty :image-size="56" description="暂无 AI 解读，点击「立即解读」生成" />
-        </div>
-
-        <!-- 解读内容（Markdown） -->
-        <div
-          v-else
-          class="interpret-body md-body"
-          v-html="renderMarkdown(activeReport.interpretationSummary)"
-        />
-      </div>
+      <!-- 原始图片/文件预览 -->
+      <el-collapse v-if="activeReport.fileUrl" class="raw-collapse">
+        <el-collapse-item title="查看原始报告图片" name="image">
+          <div class="image-preview">
+            <img 
+              :src="activeReport.fileUrl" 
+              :alt="activeReport.reportTitle"
+              class="report-image"
+              @click="previewImage(activeReport.fileUrl)"
+            />
+          </div>
+        </el-collapse-item>
+      </el-collapse>
 
       <!-- 原始文本（可选展示） -->
       <el-collapse v-if="activeReport.rawText" class="raw-collapse">
@@ -175,12 +192,20 @@
     <div v-else class="detail-placeholder">
       <el-empty :image-size="80" description="选择左侧报告查看详情" />
     </div>
+
+    <!-- 图片预览器 -->
+    <el-image-viewer
+      v-if="imageViewerVisible"
+      :url-list="[imageViewerUrl]"
+      :initial-index="0"
+      @close="imageViewerVisible = false"
+    />
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElImageViewer } from 'element-plus';
 import { ArrowLeft, Loading, Refresh } from '@element-plus/icons-vue';
 import MarkdownIt from 'markdown-it';
 import { getReportDetail, interpretReport, listReports } from '../../api/report';
@@ -212,10 +237,9 @@ const RISK_TAG = {
 };
 
 const REVIEW_TAG = {
-  PENDING:    { label: '待解读',  type: 'info' },
-  PROCESSING: { label: '解读中',  type: 'warning' },
-  DONE:       { label: '已完成',  type: 'success' },
-  FAILED:     { label: '解读失败', type: 'danger' },
+  PENDING:  { label: '待解读',  type: 'info' },
+  REVIEWED: { label: '已解读',  type: 'success' },
+  FAILED:   { label: '解读失败', type: 'danger' },
 };
 
 // ── 列表状态 ──
@@ -245,6 +269,9 @@ const filteredReports = computed(() => {
 // ── 详情状态 ──
 const activeReport = ref(null);
 const interpreting = ref(false);
+const imageViewerVisible = ref(false);
+const imageViewerUrl = ref('');
+const interpretCollapse = ref(['interpret']);
 
 onMounted(() => {
   loadList(true);
@@ -355,6 +382,11 @@ function formatDateTime(str) {
 function renderMarkdown(text) {
   if (!text) return '';
   return md.render(text);
+}
+
+function previewImage(url) {
+  imageViewerUrl.value = url;
+  imageViewerVisible.value = true;
 }
 </script>
 
@@ -493,7 +525,14 @@ function renderMarkdown(text) {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 20px 24px 32px;
+  box-sizing: border-box;
+}
+
+.detail-panel > * {
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .detail-placeholder {
@@ -537,22 +576,34 @@ function renderMarkdown(text) {
 }
 
 /* AI 解读区 */
-.interpret-section {
+.interpret-collapse {
   border: 1px solid #e4e8f0;
   border-radius: 12px;
-  padding: 18px 20px;
+  overflow: hidden;
   background: #f8fafd;
   margin-bottom: 20px;
 }
 
-.section-header {
+.interpret-collapse :deep(.el-collapse-item__header) {
+  padding: 0 20px;
+  height: auto;
+  min-height: 56px;
+  background: #f8fafd;
+}
+
+.interpret-collapse :deep(.el-collapse-item__wrap) {
+  background: #f8fafd;
+}
+
+.interpret-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  width: 100%;
+  gap: 12px;
 }
 
-.section-title {
+.interpret-header span {
   font-size: 15px;
   font-weight: 700;
   color: #1a2438;
@@ -564,7 +615,7 @@ function renderMarkdown(text) {
   gap: 10px;
   color: #909399;
   font-size: 14px;
-  padding: 16px 0;
+  padding: 16px 20px;
 }
 
 .loading-spin {
@@ -573,7 +624,7 @@ function renderMarkdown(text) {
 }
 
 .interpret-empty {
-  padding: 12px 0;
+  padding: 12px 20px;
 }
 
 /* Markdown 解读正文 */
@@ -581,6 +632,9 @@ function renderMarkdown(text) {
   font-size: 14px;
   line-height: 1.8;
   color: #2a3550;
+  padding: 0 20px 20px;
+  max-height: 500px;
+  overflow-y: auto;
 }
 
 .interpret-body :deep(> *:first-child) { margin-top: 0; }
@@ -658,6 +712,13 @@ function renderMarkdown(text) {
   border: 1px solid #e4e8f0;
   border-radius: 10px;
   overflow: hidden;
+  margin-top: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.raw-collapse:first-of-type {
+  margin-top: 0;
 }
 
 .raw-collapse :deep(.el-collapse-item__header) {
@@ -669,6 +730,7 @@ function renderMarkdown(text) {
 
 .raw-collapse :deep(.el-collapse-item__wrap) {
   background: #f7f9fc;
+  overflow: hidden;
 }
 
 .raw-text {
@@ -676,11 +738,42 @@ function renderMarkdown(text) {
   line-height: 1.7;
   color: #3a4a6b;
   white-space: pre-wrap;
-  word-break: break-all;
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
   margin: 0;
   padding: 12px 16px;
   font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
   max-height: 400px;
   overflow-y: auto;
+  overflow-x: auto;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* 图片预览 */
+.image-preview {
+  padding: 16px;
+  text-align: center;
+  background: #fff;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+}
+
+.report-image {
+  max-width: 100%;
+  max-height: 600px;
+  object-fit: contain;
+  cursor: pointer;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s;
+  display: block;
+  margin: 0 auto;
+}
+
+.report-image:hover {
+  transform: scale(1.02);
 }
 </style>

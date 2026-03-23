@@ -33,7 +33,7 @@ class ChatProcessor:
         # 先持久化用户消息，再路由执行 Agent。
         self.session_manager.save_user_message(session_id=session_id, user_id=user_id, content=message)
 
-        answer, intent, agent_used = self.router_agent.route(query_with_context)
+        answer, intent, agent_used = self.router_agent.route(query_with_context, user_id)
         self.session_manager.save_assistant_message(
             session_id=session_id,
             user_id=user_id,
@@ -60,7 +60,17 @@ class ChatProcessor:
 
         self.session_manager.save_user_message(session_id=session_id, user_id=user_id, content=message)
 
-        draft_answer, intent, agent_used = self.router_agent.route(query_with_context)
+        agent_result, intent, agent_used = self.router_agent.route(query_with_context, user_id)
+        
+        # 处理 Agent 返回的结果，支持字符串和字典两种格式
+        draft_answer = ""
+        structured_data = {}
+        if isinstance(agent_result, dict):
+            draft_answer = agent_result.get("answer", "")
+            structured_data = {k: v for k, v in agent_result.items() if k != "answer"}
+        else:
+            draft_answer = agent_result
+        
         prompt = self._build_stream_prompt(message=message, draft_answer=draft_answer, intent=intent)
 
         yield {
@@ -130,14 +140,19 @@ class ChatProcessor:
             agent_used=agent_used,
         )
 
+        # 在 done 事件中传递结构化数据
+        done_data = {
+            "session_id": session_id,
+            "answer": final_answer,
+            "intent": intent,
+            "agent_used": agent_used,
+        }
+        if structured_data:
+            done_data.update(structured_data)
+
         yield {
             "event": "done",
-            "data": {
-                "session_id": session_id,
-                "answer": final_answer,
-                "intent": intent,
-                "agent_used": agent_used,
-            },
+            "data": done_data,
         }
         logger.info(
             "chat_stream_completed session_id=%s user_id=%s intent=%s agent=%s latency_ms=%.2f",
@@ -177,7 +192,4 @@ class ChatProcessor:
 
     def _should_bypass_stream_llm(self, intent: str, draft_answer: str) -> bool:
         """判断是否跳过 LLM 流式润色。"""
-        if intent != "report_analysis":
-            return False
-        text = draft_answer.strip()
-        return text.startswith("{") or text.startswith("[")
+        return False

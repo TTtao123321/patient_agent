@@ -56,80 +56,80 @@ export function sendMessage({ sessionNo, userId, content, sceneType = 'mixed', t
  * @param {(event: { event: string, data: any }) => void} [params.onEvent]
  * @param {AbortSignal} [params.signal]
  */
-export async function streamMessage({
-  sessionNo,
-  userId,
-  content,
-  sceneType = 'mixed',
-  title,
-  onEvent,
-  signal,
-}) {
-  const response = await fetch(`${API_BASE_URL}/v1/chat/messages/stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/event-stream',
-      ...getAuthHeaders(),
-    },
-    body: JSON.stringify({ sessionNo, userId, content, sceneType, title }),
-    signal,
-  });
+export async function streamMessage(params) {
+  const { sessionNo, userId, content, sceneType = 'mixed', title, onEvent, signal } = params;
+  
+  try {
+    const response = await fetch(`${API_BASE_URL}/v1/chat/messages/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ sessionNo, userId, content, sceneType, title }),
+      signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || '流式请求失败');
-  }
-
-  if (!response.body) {
-    throw new Error('当前浏览器不支持流式响应');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder('utf-8');
-  let buffer = '';
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split('\n\n');
-    buffer = frames.pop() || '';
-
-    for (const frame of frames) {
-      const parsedEvent = parseSseEvent(frame);
-      if (!parsedEvent) continue;
-      onEvent?.(parsedEvent);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || '流式请求失败');
     }
-  }
 
-  const tail = decoder.decode();
-  if (tail) {
-    buffer += tail;
-  }
-  if (buffer.trim()) {
-    const parsedEvent = parseSseEvent(buffer);
-    if (parsedEvent) {
-      onEvent?.(parsedEvent);
+    if (!response.body) {
+      throw new Error('当前浏览器不支持流式响应');
     }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+
+      for (let i = 0; i < frames.length; i++) {
+        const frame = frames[i];
+        const parsedEvent = parseSseEvent(frame);
+        if (parsedEvent && onEvent) {
+          onEvent(parsedEvent);
+        }
+      }
+    }
+
+    if (buffer.trim()) {
+      const parsedEvent = parseSseEvent(buffer);
+      if (parsedEvent && onEvent) {
+        onEvent(parsedEvent);
+      }
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      return;
+    }
+    throw error;
   }
 }
 
 function parseSseEvent(frame) {
   const lines = frame
     .split('\n')
-    .map(line => line.trimEnd())
-    .filter(Boolean);
+    .map(function(line) { return line.trimEnd(); })
+    .filter(function(line) { return line.length > 0; });
 
-  if (!lines.length) {
+  if (lines.length === 0) {
     return null;
   }
 
   let eventName = 'message';
   const dataLines = [];
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.startsWith('event:')) {
       eventName = line.slice(6).trim();
       continue;
@@ -149,7 +149,7 @@ function parseSseEvent(frame) {
       event: eventName,
       data: JSON.parse(rawData),
     };
-  } catch {
+  } catch (e) {
     return {
       event: eventName,
       data: rawData,

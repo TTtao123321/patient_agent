@@ -268,11 +268,16 @@ public class ReportServiceImpl implements ReportService {
             throw new IllegalStateException("AI interpretation is empty");
         }
 
-        String riskLevel = inferRiskLevel(answer);
-        entity.setInterpretationSummary(answer.trim());
+        String cleanedAnswer = cleanInterpretationAnswer(answer);
+        if (cleanedAnswer == null || cleanedAnswer.isBlank()) {
+            cleanedAnswer = answer.trim();
+        }
+
+        String riskLevel = inferRiskLevel(cleanedAnswer);
+        entity.setInterpretationSummary(cleanedAnswer);
         entity.setRiskLevel(riskLevel);
         entity.setReviewStatus("REVIEWED");
-        entity.setParsedJson(buildParsedJson(entity.getParsedJson(), answer, riskLevel));
+        entity.setParsedJson(buildParsedJson(entity.getParsedJson(), cleanedAnswer, riskLevel));
         medicalReportRepository.save(entity);
 
         ReportInterpretResponse response = new ReportInterpretResponse();
@@ -512,6 +517,35 @@ public class ReportServiceImpl implements ReportService {
         }
     }
 
+    private String cleanInterpretationAnswer(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return answer;
+        }
+
+        String cleaned = answer;
+
+        // 1. 移除工具调用日志行（包含 "[工具调用]"、"[报告解读 Agent]" 等的行）
+        cleaned = cleaned.replaceAll("(?m)^.*\\[工具调用\\].*$", "");
+        cleaned = cleaned.replaceAll("(?m)^.*\\[报告解读 Agent\\].*$", "");
+
+        // 2. 移除 JSON 数据块（从 { 开始到 } 结束的完整 JSON）
+        // 先尝试移除整个 JSON 对象
+        cleaned = cleaned.replaceAll("\\{[^{}]*+(?:\\{[^{}]*+\\}[^{}]*+)*+\\}", "");
+
+        // 3. 移除空行和多余的换行
+        cleaned = cleaned.replaceAll("(?m)^[ \\t]*\\r?\\n", "");
+        cleaned = cleaned.replaceAll("\\n{3,}", "\n\n");
+
+        // 4. 移除分隔线（如 ==========）
+        cleaned = cleaned.replaceAll("(?m)^[=\\-]{5,}$", "");
+
+        // 5. 再次清理空行
+        cleaned = cleaned.replaceAll("(?m)^[ \\t]*\\r?\\n", "");
+        cleaned = cleaned.replaceAll("\\n{3,}", "\n\n");
+
+        return cleaned.trim();
+    }
+
     private String storeFile(MultipartFile file) {
         try {
             Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
@@ -523,7 +557,9 @@ public class ReportServiceImpl implements ReportService {
             Path target = uploadPath.resolve(storedName);
 
             Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
-            return target.toString();
+            
+            String relativePath = uploadDir.endsWith(File.separator) ? uploadDir : uploadDir + File.separator;
+            return "/uploads/" + storedName;
         } catch (IOException ex) {
             throw new IllegalStateException("Failed to store report file", ex);
         }

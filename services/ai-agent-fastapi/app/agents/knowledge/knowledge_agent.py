@@ -18,7 +18,7 @@ class KnowledgeAgent(BaseAgent):
         self.retriever: RagRetriever | None = None
         self._rag_disabled = False
 
-    def handle(self, query: str) -> str:
+    def handle(self, query: str, user_id: int) -> str:
         """处理医学知识类问题并返回文本回答。"""
         lines: list[str] = ["【医学知识 Agent】"]
 

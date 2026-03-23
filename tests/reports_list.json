@@ -1,0 +1,57 @@
+{
+    "code": 0,
+    "message": "OK",
+    "traceId": "11cac08d91894c038bc4dc3c4499e260",
+    "data": {
+        "userId": 1,
+        "page": 1,
+        "pageSize": 10,
+        "total": 4,
+        "items": [
+            {
+                "reportId": 1,
+                "reportNo": "R202603222218122201",
+                "reportType": "blood",
+                "reportTitle": "2026\u5e743\u6708\u8840\u5e38\u89c4\u68c0\u67e5",
+                "hospitalName": null,
+                "departmentName": null,
+                "reportDate": "2026-03-22 22:18:12",
+                "riskLevel": "HIGH",
+                "reviewStatus": "REVIEWED"
+            },
+            {
+                "reportId": 4,
+                "reportNo": "RA77060AA49964602AC4B0A8780EB6EC",
+                "reportType": "ultrasound",
+                "reportTitle": "\u8179\u90e8\u8d85\u58f0\u68c0\u67e5\u62a5\u544a",
+                "hospitalName": "\u5e02\u7b2c\u4e00\u4eba\u6c11\u533b\u9662",
+                "departmentName": "\u8d85\u58f0\u79d1",
+                "reportDate": "2026-03-20 06:22:32",
+                "riskLevel": "low",
+                "reviewStatus": "PENDING"
+            },
+            {
+                "reportId": 3,
+                "reportNo": "RFB06F9502349493486E75F3744E9A3D",
+                "reportType": "blood",
+                "reportTitle": "\u8840\u5e38\u89c4\u68c0\u67e5\u62a5\u544a",
+                "hospitalName": "\u5e02\u7b2c\u4e00\u4eba\u6c11\u533b\u9662",
+                "departmentName": "\u68c0\u9a8c\u79d1",
+                "reportDate": "2026-03-13 06:22:32",
+                "riskLevel": "medium",
+                "reviewStatus": "PENDING"
+            },
+            {
+                "reportId": 2,
+                "reportNo": "R424A35E6859440ECB6766D9ED08AA07",
+                "reportType": "blood",
+                "reportTitle": "\u8840\u5e38\u89c4\u68c0\u67e5\u62a5\u544a",
+                "hospitalName": "\u5e02\u7b2c\u4e00\u4eba\u6c11\u533b\u9662",
+                "departmentName": "\u68c0\u9a8c\u79d1",
+                "reportDate": "2026-02-26 06:22:32",
+                "riskLevel": "low",
+                "reviewStatus": "PENDING"
+            }
+        ]
+    }
+}

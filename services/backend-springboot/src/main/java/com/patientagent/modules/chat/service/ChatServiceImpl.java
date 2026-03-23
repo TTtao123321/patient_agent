@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -77,6 +78,11 @@ public class ChatServiceImpl implements ChatService {
         ChatMessageEntity userMessage = buildUserMessage(request, session, nextSeq);
         userMessage = chatMessageRepository.save(userMessage);
 
+        // 如果是新会话且标题还是默认值，设置标题为用户的第一个提问
+        if (nextSeq == 1 && (session.getTitle() == null || session.getTitle().equals("新对话"))) {
+            session.setTitle(request.getContent());
+        }
+
         // 异步模式：将 AI 任务投入消息队列，立即返回给调用方。
         aiTaskPublisher.publish(session.getSessionNo(), request.getUserId(), request.getContent());
 
@@ -112,6 +118,11 @@ public class ChatServiceImpl implements ChatService {
         int nextSeq = (int) chatMessageRepository.countBySessionIdAndIsDeleted(session.getId(), 0) + 1;
         ChatMessageEntity userMessage = buildUserMessage(request, session, nextSeq);
         chatMessageRepository.save(userMessage);
+
+        // 如果是新会话且标题还是默认值，设置标题为用户的第一个提问
+        if (nextSeq == 1 && (session.getTitle() == null || session.getTitle().equals("新对话"))) {
+            session.setTitle(request.getContent());
+        }
 
         session.setLastMessageAt(LocalDateTime.now());
         session.setCurrentAgent("router");
@@ -291,10 +302,10 @@ public class ChatServiceImpl implements ChatService {
             try {
                 emitter.send(SseEmitter.event()
                         .name("error")
-                        .data("{\"message\":\"流式回答失败，请稍后重试。\"}"));
+                        .data("{\"message\":\"流式回答失败，请稍后重试。\"}", MediaType.APPLICATION_JSON));
             } catch (Exception ignored) {
             }
-            emitter.completeWithError(ex);
+            emitter.complete();
         }
     }
 
@@ -326,7 +337,7 @@ public class ChatServiceImpl implements ChatService {
                 answerBuilder.setLength(0);
                 answerBuilder.append(data.get("answer").asText());
             }
-            emitter.send(SseEmitter.event().name(event.getEvent()).data(data == null ? "{}" : data.toString()));
+            emitter.send(SseEmitter.event().name(event.getEvent()).data(data == null ? "{}" : data.toString(), MediaType.APPLICATION_JSON));
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to forward stream event", ex);
         }

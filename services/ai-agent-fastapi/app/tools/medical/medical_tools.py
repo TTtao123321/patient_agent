@@ -1,6 +1,13 @@
 """医疗工具实现集合。"""
 from typing import Any
+import os
+import logging
+import httpx
 from app.tools.base_tool import BaseTool, ToolParameter
+
+
+logger = logging.getLogger(__name__)
+BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8080")
 
 
 class GetMedicalReportTool(BaseTool):
@@ -38,7 +45,7 @@ class GetMedicalReportTool(BaseTool):
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """执行报告查询。"""
+        """执行报告查询 - 调用 Java 后端真实接口。"""
         try:
             user_id = kwargs.get("user_id")
             report_type = kwargs.get("report_type")
@@ -50,67 +57,73 @@ class GetMedicalReportTool(BaseTool):
                     "error": "缺少必需参数: user_id",
                 }
             
-            # 当前为 Mock 数据；生产环境可替换为 Java 后端 API 调用。
-            mock_reports = [
-                {
-                    "report_no": "RPT20260310001",
-                    "report_type": "blood",
-                    "report_title": "血液检查报告",
-                    "report_date": "2026-03-10",
-                    "risk_level": "MEDIUM",
-                    "interpretation_summary": "白细胞轻度升高，血红蛋白偏低，提示可能存在感染和轻度贫血倾向",
-                    "raw_text": "白细胞 12.5 x10^9/L，参考范围 4.0-10.0；血红蛋白 110 g/L，参考范围 120-160；血小板 250 x10^9/L，参考范围 100-300；中性粒细胞百分比 78%，参考范围 40-75。",
-                    "hospital_name": "协和医院",
-                    "department_name": "检验科",
-                },
-                {
-                    "report_no": "RPT20260305002",
-                    "report_type": "ct",
-                    "report_title": "胸部CT报告",
-                    "report_date": "2026-03-05",
-                    "risk_level": "MEDIUM",
-                    "interpretation_summary": "右上肺发现1.5cm磨玻璃影，建议3个月复查",
-                    "raw_text": "胸部CT提示：右上肺见约1.5cm磨玻璃影，边界欠清。双肺纹理稍增多，未见明显胸腔积液。",
-                    "hospital_name": "协和医院",
-                    "department_name": "放射科",
-                },
-                {
-                    "report_no": "RPT20260301003",
-                    "report_type": "blood",
-                    "report_title": "血脂检查报告",
-                    "report_date": "2026-03-01",
-                    "risk_level": "HIGH",
-                    "interpretation_summary": "总胆固醇升高，低密度脂蛋白升高，提示血脂异常风险",
-                    "raw_text": "总胆固醇 6.5 mmol/L，参考范围 0-5.2；低密度脂蛋白 4.2 mmol/L，参考范围 0-3.4；高密度脂蛋白 0.9 mmol/L，参考范围 >1.0；甘油三酯 2.8 mmol/L，参考范围 0-1.7。",
-                    "hospital_name": "协和医院",
-                    "department_name": "检验科",
-                },
-                {
-                    "report_no": "RPT20260228004",
-                    "report_type": "blood",
-                    "report_title": "空腹血糖检查报告",
-                    "report_date": "2026-02-28",
-                    "risk_level": "MEDIUM",
-                    "interpretation_summary": "空腹血糖升高，提示糖代谢异常倾向",
-                    "raw_text": "空腹血糖 7.2 mmol/L，参考范围 3.9-6.1；血糖负荷后1小时 11.8 mmol/L，参考范围 <7.8；血糖负荷后2小时 8.9 mmol/L，参考范围 <7.8。",
-                    "hospital_name": "协和医院",
-                    "department_name": "检验科",
-                },
-            ]
-            
-            # 按报告类型筛选。
+            # 调用 Java 后端的报告列表接口
+            params = {
+                "userId": user_id,
+                "page": 1,
+                "pageSize": limit
+            }
             if report_type:
-                mock_reports = [r for r in mock_reports if r["report_type"] == report_type]
+                params["reportType"] = report_type
             
-            # 截断返回数量。
-            mock_reports = mock_reports[:limit]
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(
+                    f"{BACKEND_BASE_URL}/api/v1/reports",
+                    params=params
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            # Java 后端返回格式: code=0 表示成功
+            if result.get("code") != 0:
+                return {
+                    "success": False,
+                    "error": result.get("message", "获取医疗报告失败"),
+                }
+            
+            data = result.get("data", {})
+            items = data.get("items", [])
+            
+            # 对每个报告调用详情接口获取完整数据
+            reports = []
+            with httpx.Client(timeout=30.0) as client:
+                for item in items:
+                    report_no = item.get("reportNo")
+                    if not report_no:
+                        continue
+                    
+                    try:
+                        detail_response = client.get(
+                            f"{BACKEND_BASE_URL}/api/v1/reports/{report_no}",
+                            params={"userId": user_id}
+                        )
+                        detail_response.raise_for_status()
+                        detail_result = detail_response.json()
+                        
+                        if detail_result.get("code") == 0:
+                            detail_data = detail_result.get("data", {})
+                            reports.append({
+                                "report_no": detail_data.get("reportNo"),
+                                "report_type": detail_data.get("reportType"),
+                                "report_title": detail_data.get("reportTitle"),
+                                "report_date": detail_data.get("reportDate"),
+                                "risk_level": detail_data.get("riskLevel"),
+                                "raw_text": detail_data.get("rawText", ""),
+                                "parsed_json": detail_data.get("parsedJson", ""),
+                                "interpretation_summary": detail_data.get("interpretationSummary", ""),
+                                "hospital_name": detail_data.get("hospitalName"),
+                                "department_name": detail_data.get("departmentName"),
+                            })
+                    except Exception as e:
+                        logger.warning(f"获取报告详情失败 report_no={report_no}: {e}")
+                        continue
             
             return {
                 "success": True,
                 "data": {
                     "user_id": user_id,
-                    "reports_count": len(mock_reports),
-                    "reports": mock_reports,
+                    "reports_count": len(reports),
+                    "reports": reports,
                 },
             }
         except Exception as e:
@@ -141,18 +154,25 @@ class GetMedicalRecordTool(BaseTool):
                 required=True,
             ),
             ToolParameter(
+                name="record_type",
+                type="string",
+                description="记录类型: OUTPATIENT(门诊), INPATIENT(住院), EMERGENCY(急诊)",
+                required=False,
+            ),
+            ToolParameter(
                 name="limit",
                 type="integer",
-                description="返回最多病历数，默认值3",
+                description="返回最多病历数，默认值5",
                 required=False,
             ),
         ]
     
     def execute(self, **kwargs) -> dict[str, Any]:
-        """执行病历查询。"""
+        """执行病历查询 - 调用 Java 后端真实接口。"""
         try:
             user_id = kwargs.get("user_id")
-            limit = kwargs.get("limit", 3)
+            record_type = kwargs.get("record_type")
+            limit = kwargs.get("limit", 5)
             
             if not user_id:
                 return {
@@ -160,41 +180,55 @@ class GetMedicalRecordTool(BaseTool):
                     "error": "缺少必需参数: user_id",
                 }
             
-            # 当前为 Mock 数据；生产环境可替换为 Java 后端 API 调用。
-            mock_records = [
-                {
-                    "record_no": "MR20260310001",
-                    "patient_name": "李明",
-                    "age": 45,
-                    "record_date": "2026-03-10",
-                    "chief_complaint": "咳嗽2周",
-                    "present_illness": "患者2周前因受凉出现干咳，伴喉咙痒，无发热，无浓痰",
-                    "past_history": "高血压病史10年，目前控制良好；2年前得过肺炎",
-                    "allergy_history": "青霉素过敏",
-                    "attending_doctor": "王医生",
-                },
-                {
-                    "record_no": "MR20260220001",
-                    "patient_name": "李明",
-                    "age": 45,
-                    "record_date": "2026-02-20",
-                    "chief_complaint": "头晕",
-                    "present_illness": "患者血压升高至160/100mmHg，伴头晕",
-                    "past_history": "高血压病史10年",
-                    "allergy_history": "青霉素过敏",
-                    "attending_doctor": "张医生",
-                },
-            ]
+            # 调用 Java 后端的病历列表接口
+            params = {
+                "userId": user_id,
+                "page": 1,
+                "pageSize": limit
+            }
+            if record_type:
+                params["recordType"] = record_type
             
-            # 截断返回数量。
-            mock_records = mock_records[:limit]
+            with httpx.Client(timeout=30.0) as client:
+                response = client.get(
+                    f"{BACKEND_BASE_URL}/api/v1/medical-records/internal/by-user",
+                    params=params
+                )
+                response.raise_for_status()
+                result = response.json()
+            
+            # Java 后端返回格式: code=0 表示成功
+            if result.get("code") != 0:
+                return {
+                    "success": False,
+                    "error": result.get("message", "获取病历记录失败"),
+                }
+            
+            data = result.get("data", {})
+            items = data.get("items", [])
+            
+            # 转换为工具期望的格式
+            records = []
+            for item in items:
+                records.append({
+                    "record_no": item.get("recordNo"),
+                    "patient_name": item.get("patientName"),
+                    "age": item.get("age"),
+                    "chief_complaint": item.get("chiefComplaint"),
+                    "diagnosis_summary": item.get("diagnosisSummary"),
+                    "record_date": item.get("recordDate"),
+                    "present_illness": "",
+                    "past_history": "",
+                    "allergy_history": "",
+                    "attending_doctor": item.get("attendingDoctor"),
+                })
             
             return {
                 "success": True,
                 "data": {
                     "user_id": user_id,
-                    "records_count": len(mock_records),
-                    "records": mock_records,
+                    "records_count": len(records),
+                    "records": records,
                 },
             }
         except Exception as e:

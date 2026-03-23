@@ -6,12 +6,12 @@ from app.agents.base.base_agent import BaseAgent
 class RecordQueryAgent(BaseAgent):
     """处理用户病历/既往史相关问题。"""
     
-    def handle(self, query: str) -> str:
+    def handle(self, query: str, user_id: int) -> str:
         """查询并摘要历史病历信息。"""
         lines: list[str] = ["【病历查询 Agent】"]
 
-        # 通过工具读取病历（当前用示例 user_id，后续可从上下文透传）。
-        result = self.call_tool("get_medical_record", user_id=1, limit=5)
+        # 通过工具读取病历。
+        result = self.call_tool("get_medical_record", user_id=user_id, limit=5)
 
         if result["success"] and result["data"]:
             records = result["data"].get("records", [])
@@ -20,10 +20,11 @@ class RecordQueryAgent(BaseAgent):
             if records:
                 lines.append("医疗历史摘要：")
                 for idx, record in enumerate(records, 1):
-                    visit_date = record.get("visit_date", "未知日期")
+                    record_date = record.get("record_date", "未知日期")
                     chief_complaint = record.get("chief_complaint", "未记录")
-                    diagnosis = record.get("diagnosis", "未记录")
-                    entry = f"{idx}. [{visit_date}] 主诉：{chief_complaint}，诊断：{diagnosis}"
+                    diagnosis = record.get("diagnosis_summary", "未记录")
+                    attending_doctor = record.get("attending_doctor", "未知")
+                    entry = f"{idx}. [{record_date}] 主诉：{chief_complaint}，诊断：{diagnosis}，医生：{attending_doctor}"
                     lines.append(entry)
             else:
                 lines.append("暂未找到相关医疗记录。")

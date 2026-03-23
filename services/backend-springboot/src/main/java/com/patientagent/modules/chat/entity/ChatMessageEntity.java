@@ -61,7 +61,7 @@ public class ChatMessageEntity {
     private Integer sequenceNo;
 
     /** 消息文本内容。 */
-    @Column(name = "content", nullable = false)
+    @Column(name = "content", nullable = false, columnDefinition = "text")
     private String content;
 
     /** 结构化载荷（JSON 字符串），如报告解析结果等复杂输出。 */

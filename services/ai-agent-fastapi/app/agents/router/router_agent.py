@@ -29,8 +29,13 @@ class RouterAgent:
         self.knowledge_agent = KnowledgeAgent()
         self.record_agent = RecordQueryAgent()
 
-    def route(self, query: str) -> tuple[str, str, str]:
-        """根据意图路由到对应 Agent，返回 (answer, intent, agent_used)。"""
+    def route(self, query: str, user_id: int) -> tuple:
+        """根据意图路由到对应 Agent，返回 (answer_or_data, intent, agent_used)。
+        
+        返回值：
+        - 如果 Agent 返回字符串：(answer_str, intent, agent_used)
+        - 如果 Agent 返回字典：(data_dict, intent, agent_used)
+        """
         started_at = time.perf_counter()
         intent = self.classifier.classify(query)
         logger.info("agent_route_intent intent=%s query_len=%s", intent, len(query))
@@ -39,6 +44,7 @@ class RouterAgent:
             return self._execute_agent(
                 handler=self.symptom_agent.handle,
                 query=query,
+                user_id=user_id,
                 intent=intent,
                 agent_name="symptom_agent",
                 started_at=started_at,
@@ -48,6 +54,7 @@ class RouterAgent:
             return self._execute_agent(
                 handler=self.report_agent.handle,
                 query=query,
+                user_id=user_id,
                 intent=intent,
                 agent_name="report_agent",
                 started_at=started_at,
@@ -57,6 +64,7 @@ class RouterAgent:
             return self._execute_agent(
                 handler=self.record_agent.handle,
                 query=query,
+                user_id=user_id,
                 intent=intent,
                 agent_name="record_agent",
                 started_at=started_at,
@@ -66,6 +74,7 @@ class RouterAgent:
         return self._execute_agent(
             handler=self.knowledge_agent.handle,
             query=query,
+            user_id=user_id,
             intent="medical_knowledge",
             agent_name="knowledge_agent",
             started_at=started_at,
@@ -75,13 +84,14 @@ class RouterAgent:
         self,
         handler,
         query: str,
+        user_id: int,
         intent: str,
         agent_name: str,
         started_at: float,
-    ) -> tuple[str, str, str]:
+    ) -> tuple:
         """统一执行 Agent 并记录指标、日志与慢调用告警。"""
         try:
-            answer = handler(query)
+            result = handler(query, user_id)
             latency_ms = (time.perf_counter() - started_at) * 1000
             metrics_registry.record_agent_call(agent_name=agent_name, success=True)
             logger.info(
@@ -98,7 +108,7 @@ class RouterAgent:
                     latency_ms,
                     settings.slow_agent_call_threshold_ms,
                 )
-            return answer, intent, agent_name
+            return result, intent, agent_name
         except Exception:
             metrics_registry.record_agent_call(agent_name=agent_name, success=False)
             logger.exception("agent_route_failed intent=%s agent=%s", intent, agent_name)

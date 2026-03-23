@@ -97,13 +97,13 @@ Respond with ONLY the intent name (one of: symptom_consult, report_analysis, rec
         text = (query or "").strip().lower()
         
         # 按优先级依次匹配，避免类别歧义。
-        # 1) 病历查询
-        if any(word in text for word in self.RECORD_KEYWORDS):
-            return "record_query"
-        
-        # 2) 报告解读
+        # 1) 报告解读（优先，因为报告查询中经常包含"记录"等词）
         if any(word in text for word in self.REPORT_KEYWORDS):
             return "report_analysis"
+        
+        # 2) 病历查询
+        if any(word in text for word in self.RECORD_KEYWORDS):
+            return "record_query"
         
         # 3) 常见问法词需与症状词区分，避免把症状咨询误判为知识问答。
         has_knowledge_kw = any(word in text for word in {"怎样", "怎么", "如何", "治疗", "建议"})
